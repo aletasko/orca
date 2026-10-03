@@ -44,10 +44,15 @@ test.use({
   }
 })
 
-async function reconnect(page: Page, targetId: string): Promise<void> {
-  await page.evaluate(async (id) => {
+/** Returns what the connect itself resolved to, so a stalled state names which side lost it. */
+async function reconnect(page: Page, targetId: string): Promise<string> {
+  return page.evaluate(async (id) => {
     await window.api.ssh.disconnect({ targetId: id })
-    await window.api.ssh.connect({ targetId: id })
+    try {
+      return JSON.stringify((await window.api.ssh.connect({ targetId: id }))?.managedServer ?? null)
+    } catch (error) {
+      return `connect threw: ${String(error)}`
+    }
   }, targetId)
 }
 
@@ -234,7 +239,7 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
         { hostId: toSshExecutionHostId(remote.targetId), worktreeId: remote.worktreeId }
       )}`
     )
-    await reconnect(page, remote.targetId)
+    const connected = await reconnect(page, remote.targetId)
     // Polls the whole state so a timeout reports why the host stayed on the relay.
     await expect
       .poll(
@@ -245,8 +250,14 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
           }
           const leases = targetLeases(userData, remote.targetId)
           const journal = findOrcadMigrationSourceCutoverForTarget(userData, remote.targetId)
+          const mainState = await page.evaluate(
+            async (id) => (await window.api.ssh.getState({ targetId: id }))?.managedServer ?? null,
+            remote.targetId
+          )
           return JSON.stringify({
             server,
+            mainState,
+            connected,
             leases,
             journal: journal && { phase: journal.phase, updatedAt: journal.updatedAt }
           })
