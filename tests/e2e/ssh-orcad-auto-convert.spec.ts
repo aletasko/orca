@@ -16,7 +16,12 @@ import os from 'node:os'
 import path from 'node:path'
 import type { Page } from '@stablyai/playwright-test'
 import { expect, test } from './helpers/orca-app'
-import { ensureTerminalVisible, waitForActiveWorktree, waitForSessionReady } from './helpers/store'
+import {
+  ensureTerminalVisible,
+  switchToWorktree,
+  waitForActiveWorktree,
+  waitForSessionReady
+} from './helpers/store'
 import { execInTerminal, waitForActivePanePtyId, waitForTerminalOutput } from './helpers/terminal'
 import { connectSshTestTarget } from './helpers/ssh-test-target-connection'
 import { readPersistedProfileState } from './helpers/persisted-profile-state'
@@ -88,7 +93,7 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
   try {
     const userData = await electronApp.evaluate(({ app }) => app.getPath('userData'))
     await waitForSessionReady(page)
-    await waitForActiveWorktree(page)
+    const localWorktreeId = await waitForActiveWorktree(page)
 
     // 1. Relay era: no template, so the connect keeps the relay.
     const remote = await connectSshTestTarget(page, host.input, {
@@ -116,20 +121,14 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
       },
       { targetId: remote.targetId, folder: host.remoteFolderPath }
     )
-    // A tab that never spawns a shell: it stays in the session without a live relay terminal.
-    const sessionTabId = await page.evaluate(
-      (worktreeId) =>
-        window.__store!.getState().createTab(worktreeId, undefined, undefined, {
-          activate: false,
-          pendingActivationSpawn: true
-        }).id,
-      remote.worktreeId
-    )
     await ensureTerminalVisible(page, 45_000)
     const ptyId = await waitForActivePanePtyId(page, 60_000)
     const marker = `ORCAD-CONVERT-${Date.now()}`
     await execInTerminal(page, ptyId, `echo ${marker}`)
     await waitForTerminalOutput(page, marker, 30_000)
+    // Off the remote worktree first: closing the exited tab would otherwise activate, and spawn, the
+    // next terminal tab there, and that live relay shell keeps the host on the relay.
+    await switchToWorktree(page, localWorktreeId)
     // An exited shell leaves an exit record, which is what lets the gate prove no terminal runs.
     await execInTerminal(page, ptyId, 'exit')
     // The connect's terminal gate asks the relay the same question, so a timeout names the blocker.
@@ -156,6 +155,14 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
         { timeout: 30_000 }
       )
       .toBe('[]')
+    // Created while its worktree is hidden, so it stays in the session without ever mounting a shell.
+    const sessionTabId = await page.evaluate(
+      (worktreeId) =>
+        window.__store!.getState().createTab(worktreeId, undefined, undefined, {
+          activate: false
+        }).id,
+      remote.worktreeId
+    )
     // An SSH worktree's session lives in its host's partition, not the local one.
     await expect
       .poll(
