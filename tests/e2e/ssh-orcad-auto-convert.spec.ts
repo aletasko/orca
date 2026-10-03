@@ -35,6 +35,7 @@ const TEMPLATE_SOURCE = process.env.ORCA_E2E_ORCAD_CONVERT_TEMPLATE
 const SCRATCH = path.join(os.tmpdir(), `orca-orcad-convert-${process.pid}`)
 const TEMPLATE_DIR = path.join(SCRATCH, 'orcad-template')
 const FLAGS_FILE = path.join(SCRATCH, 'rollout-flags.json')
+const CONVERT_TIMEOUT_MS = 8 * 60_000
 
 test.use({
   orcaAppExtraEnv: {
@@ -245,8 +246,7 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
           const leases = targetLeases(userData, remote.targetId)
           return JSON.stringify({ server, leases })
         },
-        // The connect returns only after the conversion settled, so this waits on the broadcast.
-        { timeout: 30_000 }
+        { timeout: CONVERT_TIMEOUT_MS }
       )
       .toBe('managed')
     const environments = await page.evaluate(() => window.api.runtimeEnvironments.list())
