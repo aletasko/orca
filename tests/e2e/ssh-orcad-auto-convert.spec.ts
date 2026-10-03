@@ -94,8 +94,11 @@ async function serverCall(page: Page, selector: string, method: string): Promise
     selector,
     method
   })
-  expect(response, `${method} on the managed server`).toMatchObject({ ok: true })
-  return JSON.stringify(response)
+  const text = JSON.stringify(response)
+  expect(response, `${method} on the managed server: ${text.slice(0, 2_000)}`).toMatchObject({
+    ok: true
+  })
+  return text
 }
 
 test('a relay host converts to managed orcad on connect, keeps its source, then retires it', async ({
