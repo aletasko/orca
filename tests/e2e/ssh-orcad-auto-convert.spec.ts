@@ -90,9 +90,11 @@ function logConversionInputs(userData: string, targetId: string): void {
 }
 
 async function serverCall(page: Page, selector: string, method: string): Promise<string> {
+  // Why a long budget: a fresh server's first session inventory restores every migrated tab.
   const response = await page.evaluate((args) => window.api.runtimeEnvironments.call(args), {
     selector,
-    method
+    method,
+    timeoutMs: 120_000
   })
   const text = JSON.stringify(response)
   expect(response, `${method} on the managed server: ${text.slice(0, 2_000)}`).toMatchObject({
