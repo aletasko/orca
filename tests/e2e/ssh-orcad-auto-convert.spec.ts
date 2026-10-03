@@ -127,6 +127,18 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
     await waitForTerminalOutput(page, marker, 30_000)
     // An exited shell leaves an exit record, which is what lets the gate prove no terminal runs.
     await execInTerminal(page, ptyId, 'exit')
+    // The connect's terminal gate asks the relay the same question, so a timeout names the blocker.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            async (connectionId) =>
+              JSON.stringify(await window.api.pty.listSessions({ connectionId })),
+            remote.targetId
+          ),
+        { timeout: 30_000 }
+      )
+      .toBe('[]')
     // An SSH worktree's session lives in its host's partition, not the local one.
     await expect
       .poll(
