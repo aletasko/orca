@@ -6,6 +6,7 @@
  * the flag's version range, or was never received, so the payload can only move what it names.
  */
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { z } from 'zod'
 import { compareVersions, isValidVersion } from '../updater-fallback'
 
@@ -133,7 +134,30 @@ export function isRolloutFlagActive(
   name: RolloutFlagName,
   context: Omit<RolloutFlagContext, 'config'>
 ): boolean {
-  return resolveRolloutFlag(name, { ...context, config: lastRolloutConfig })
+  return resolveRolloutFlag(name, {
+    ...context,
+    config: readE2ERolloutConfigOverride() ?? lastRolloutConfig
+  })
+}
+
+/**
+ * E2E launches only: a `flags` block read from `ORCA_E2E_ROLLOUT_FLAGS_FILE` on every check, so a
+ * spec can flip a flag between two connects without the campaign fetch or a relaunch.
+ */
+export function readE2ERolloutConfigOverride(
+  env: NodeJS.ProcessEnv = process.env
+): RolloutConfig | null {
+  const file = env.ORCA_E2E_ROLLOUT_FLAGS_FILE
+  if (!env.ORCA_E2E_USER_DATA_DIR || !file) {
+    return null
+  }
+  try {
+    return parseRolloutConfig({
+      rollout: { version: 1, flags: JSON.parse(readFileSync(file, 'utf8')) }
+    })
+  } catch {
+    return null
+  }
 }
 
 export function resetRolloutConfigForTests(): void {

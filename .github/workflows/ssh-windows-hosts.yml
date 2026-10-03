@@ -35,6 +35,9 @@ on:
       - '!src/**/*.test.ts'
       - 'src/main/ssh/ssh-relay-windows-host-lane.test.ts'
       - 'src/main/ssh/orcad-windows-host-lane.test.ts'
+      - 'src/main/ipc/ssh-host-server-*'
+      - 'tests/e2e/ssh-orcad-auto-convert.spec.ts'
+      - 'tests/e2e/helpers/orcad-convert-host.ts'
       - 'config/ci/windows-ssh-provider/**'
       - '.github/workflows/ssh-windows-hosts.yml'
       - '.github/actions/prepare-orcad-prebuilds/**'
@@ -149,6 +152,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path $receipts | Out-Null
           $cells=@($env:CELLS -split ',' | ForEach-Object {$_.Trim()} | Where-Object {$_})
           if(-not $cells.Count){$cells=@('pinned-cmd','pinned-powershell','legacy-opt-out','orcad-cmd','orcad-powershell')}
+          # One Windows host runs the app-level conversion; it is last because it switches native modules.
+          if(-not $env:CELLS -and '${{ matrix.arch }}' -eq 'x64' -and '${{ matrix.server }}' -eq 'inbox'){$cells+='orcad-convert'}
           $archive=''
           $preparation=''
           if('${{ matrix.server }}' -eq 'inbox' -and '${{ matrix.arch }}' -eq 'arm64'){$preparation=Join-Path $receipts 'inbox-capability-preparation.json'}
