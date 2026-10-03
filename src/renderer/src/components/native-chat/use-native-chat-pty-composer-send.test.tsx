@@ -75,10 +75,16 @@ it('routes a Claude image send outcome to its own pending echo', () => {
   expect(callbacks.rejected).toHaveBeenCalledWith('pending-1')
 })
 
-it.each([
-  ['codex', 'chat', 'hello'],
-  ['claude', 'command', '/compact']
-] as const)('leaves a %s %s send on the unobserved write path', (agent, classification, draft) => {
-  send(agent, classification, draft)
+it('routes a Codex chat send outcome to its own pending echo', () => {
+  const callbacks = send('codex', 'chat', 'hello')
+  const options = vi.mocked(sendNativeChatMessage).mock.calls[0]?.[3]
+  options?.onWriteRejected?.()
+  options?.onWriteUnconfirmed?.()
+  expect(callbacks.rejected).toHaveBeenCalledWith('pending-1')
+  expect(callbacks.unconfirmed).toHaveBeenCalledWith('pending-1')
+})
+
+it('leaves a Claude command send on the unobserved write path', () => {
+  send('claude', 'command', '/compact')
   expect(vi.mocked(sendNativeChatMessage).mock.calls[0]?.[3]?.onWriteRejected).toBeUndefined()
 })

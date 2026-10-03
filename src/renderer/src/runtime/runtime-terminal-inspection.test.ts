@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   inspectRuntimeTerminalProcess,
   recordRuntimeTerminalInputForPtyId,
+  sendRuntimePtyEnterVerified,
   sendRuntimePtyInput,
   sendRuntimePtyInputVerified
 } from './runtime-terminal-inspection'
@@ -484,6 +485,33 @@ describe('runtime terminal owner routing', () => {
       params: {
         terminal: 'terminal-1',
         text: 'x',
+        client: { id: 'orca-desktop', type: 'desktop' }
+      },
+      timeoutMs: 15_000
+    })
+  })
+
+  it('submits remote chat input using the host Enter action', async () => {
+    runtimeCall.mockResolvedValue({
+      ok: true,
+      result: { send: { handle: 'terminal-1', accepted: true, bytesWritten: 1 } },
+      _meta: { runtimeId: 'runtime-1' }
+    })
+
+    await expect(
+      sendRuntimePtyEnterVerified(
+        { activeRuntimeEnvironmentId: 'env-2' },
+        'remote:env-1@@terminal-1',
+        'driving'
+      )
+    ).resolves.toBe(true)
+
+    expect(runtimeCall).toHaveBeenCalledWith({
+      selector: 'env-1',
+      method: 'terminal.send',
+      params: {
+        terminal: 'terminal-1',
+        enter: true,
         client: { id: 'orca-desktop', type: 'desktop' }
       },
       timeoutMs: 15_000

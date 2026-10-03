@@ -1,4 +1,7 @@
-import { sendRuntimePtyInputVerified } from '@/runtime/runtime-terminal-inspection'
+import {
+  sendRuntimePtyEnterVerified,
+  sendRuntimePtyInputVerified
+} from '@/runtime/runtime-terminal-inspection'
 import type { getSettingsForAgentTabRuntimeOwner } from '@/lib/agent-paste-draft'
 import { enqueueNativeChatPtySend } from './native-chat-pty-send-queue'
 import {
@@ -12,7 +15,7 @@ import {
 export function sendNativeChatObservedWrites(
   settings: ReturnType<typeof getSettingsForAgentTabRuntimeOwner>,
   ptyId: string,
-  writes: readonly { data: string; delayBeforeMs: number }[],
+  writes: readonly { data: string; delayBeforeMs: number; enter?: boolean }[],
   options: NativeChatSendOptions
 ) {
   return enqueueNativeChatPtySend(
@@ -34,7 +37,9 @@ export function sendNativeChatObservedWrites(
           if (isCancelled()) {
             return
           }
-          void sendRuntimePtyInputVerified(settings, ptyId, write.data, 'driving')
+          void (write.enter
+            ? sendRuntimePtyEnterVerified(settings, ptyId, 'driving')
+            : sendRuntimePtyInputVerified(settings, ptyId, write.data, 'driving'))
             .then((accepted) => {
               if (isCancelled()) {
                 return

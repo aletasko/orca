@@ -35,7 +35,7 @@ export function sendNativeChatMessageWithImageAttachments(
   }
   const trimmedText = text.trim()
   if (options?.onWriteRejected) {
-    const writes = agentImagePasteWrites(
+    const writes: { data: string; delayBeforeMs: number; enter?: boolean }[] = agentImagePasteWrites(
       agent,
       imagePaths.map((path) => buildNativeChatImagePasteBytes(formatAgentImagePath(agent, path))),
       trimmedText.length > 0
@@ -46,7 +46,7 @@ export function sendNativeChatMessageWithImageAttachments(
         delayBeforeMs: NATIVE_CHAT_IMAGE_ATTACHMENT_SETTLE_MS
       })
     }
-    writes.push({ data: NATIVE_CHAT_SUBMIT, delayBeforeMs: NATIVE_CHAT_SUBMIT_DELAY_MS })
+    writes.push({ data: NATIVE_CHAT_SUBMIT, delayBeforeMs: NATIVE_CHAT_SUBMIT_DELAY_MS, enter: true })
     return sendNativeChatObservedWrites(settings, ptyId, writes, options)
   }
   const durationMs =

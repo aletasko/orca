@@ -1,19 +1,21 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-const io = vi.hoisted(() => ({ write: vi.fn(), verified: vi.fn() }))
+const io = vi.hoisted(() => ({ write: vi.fn(), verified: vi.fn(), enter: vi.fn() }))
 vi.mock('@/runtime/runtime-terminal-inspection', () => ({
   sendRuntimePtyInput: io.write,
-  sendRuntimePtyInputVerified: io.verified
+  sendRuntimePtyInputVerified: io.verified,
+  sendRuntimePtyEnterVerified: io.enter
 }))
 import {
   sendNativeChatMessage,
   resetNativeChatPtySendQueuesForTests
 } from './native-chat-runtime-send'
-import { buildNativeChatPasteBytes, NATIVE_CHAT_SUBMIT } from './native-chat-send'
+import { buildNativeChatPasteBytes } from './native-chat-send'
 beforeEach(() => {
   vi.useFakeTimers()
   resetNativeChatPtySendQueuesForTests()
   io.write.mockReset().mockReturnValue(true)
   io.verified.mockReset().mockResolvedValue(true)
+  io.enter.mockReset().mockResolvedValue(true)
 })
 afterEach(() => {
   resetNativeChatPtySendQueuesForTests()
@@ -32,15 +34,15 @@ it('observes a refused write, skips Enter, and releases the queue for the next u
   await vi.advanceTimersByTimeAsync(1000)
   expect(io.verified.mock.calls.map((call) => call[2])).toEqual([
     buildNativeChatPasteBytes('refused'),
-    buildNativeChatPasteBytes('next'),
-    NATIVE_CHAT_SUBMIT
+    buildNativeChatPasteBytes('next')
   ])
+  expect(io.enter).toHaveBeenCalledOnce()
 })
 it('reports a lost acknowledgment once as unconfirmed, never as rejection, and still submits', async () => {
   const rejected = vi.fn()
   const unconfirmed = vi.fn()
   io.verified.mockRejectedValueOnce(new Error('lost acknowledgment'))
-  io.verified.mockRejectedValueOnce(new Error('lost acknowledgment'))
+  io.enter.mockRejectedValueOnce(new Error('lost acknowledgment'))
   sendNativeChatMessage(null, 'pane', 'uncertain', {
     onWriteRejected: rejected,
     onWriteUnconfirmed: unconfirmed
@@ -49,9 +51,9 @@ it('reports a lost acknowledgment once as unconfirmed, never as rejection, and s
   expect(rejected).not.toHaveBeenCalled()
   expect(unconfirmed).toHaveBeenCalledOnce()
   expect(io.verified.mock.calls.map((call) => call[2])).toEqual([
-    buildNativeChatPasteBytes('uncertain'),
-    NATIVE_CHAT_SUBMIT
+    buildNativeChatPasteBytes('uncertain')
   ])
+  expect(io.enter).toHaveBeenCalledOnce()
 })
 it('serializes rapid sends through their acknowledged Enter and preserves the paste delay', async () => {
   const rejected = vi.fn()
@@ -62,8 +64,16 @@ it('serializes rapid sends through their acknowledged Enter and preserves the pa
   await vi.advanceTimersByTimeAsync(501)
   expect(io.verified.mock.calls.map((call) => call[2])).toEqual([
     buildNativeChatPasteBytes('one'),
-    NATIVE_CHAT_SUBMIT,
-    buildNativeChatPasteBytes('two'),
-    NATIVE_CHAT_SUBMIT
+    buildNativeChatPasteBytes('two')
   ])
+  expect(io.enter).toHaveBeenCalledTimes(2)
+})
+
+it('reports a refused Enter so chat does not silently claim delivery', async () => {
+  const rejected = vi.fn()
+  io.enter.mockResolvedValueOnce(false)
+  sendNativeChatMessage(null, 'pane', 'needs submit', { onWriteRejected: rejected })
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(rejected).toHaveBeenCalledOnce()
+  expect(io.enter).toHaveBeenCalledOnce()
 })

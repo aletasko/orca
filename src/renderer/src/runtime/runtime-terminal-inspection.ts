@@ -280,7 +280,8 @@ export async function sendRuntimePtyInputVerified(
   settings: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null | undefined,
   ptyId: string,
   data: string,
-  inputKind: TerminalInputKind
+  inputKind: TerminalInputKind,
+  options?: { enter?: boolean }
 ): Promise<boolean> {
   const tooLarge = isRuntimePtyInputTooLarge(data)
   if (typeof tooLarge === 'boolean' ? tooLarge : await tooLarge) {
@@ -308,7 +309,9 @@ export async function sendRuntimePtyInputVerified(
     const result = await callRuntimeRpc<{ send: RuntimeTerminalSend }>(
       target,
       'terminal.send',
-      { terminal, text: data, client: DESKTOP_RUNTIME_CLIENT },
+      options?.enter
+        ? { terminal, enter: true, client: DESKTOP_RUNTIME_CLIENT }
+        : { terminal, text: data, client: DESKTOP_RUNTIME_CLIENT },
       { timeoutMs: 15_000 }
     )
     if (result.send.accepted === true) {
@@ -322,4 +325,13 @@ export async function sendRuntimePtyInputVerified(
     }
     throw error
   }
+}
+
+/** Submit a chat composer line with the host's Enter action, separate from pasted text. */
+export async function sendRuntimePtyEnterVerified(
+  settings: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null | undefined,
+  ptyId: string,
+  inputKind: TerminalInputKind
+): Promise<boolean> {
+  return sendRuntimePtyInputVerified(settings, ptyId, '\r', inputKind, { enter: true })
 }
