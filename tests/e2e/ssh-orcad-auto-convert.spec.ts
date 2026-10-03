@@ -30,7 +30,6 @@ const TEMPLATE_SOURCE = process.env.ORCA_E2E_ORCAD_CONVERT_TEMPLATE
 const SCRATCH = path.join(os.tmpdir(), `orca-orcad-convert-${process.pid}`)
 const TEMPLATE_DIR = path.join(SCRATCH, 'orcad-template')
 const FLAGS_FILE = path.join(SCRATCH, 'rollout-flags.json')
-const CONVERT_TIMEOUT_MS = 8 * 60_000
 
 test.use({
   orcaAppExtraEnv: {
@@ -57,6 +56,11 @@ function isManaged(server: unknown): boolean {
   return (
     typeof server === 'object' && server !== null && 'kind' in server && server.kind === 'managed'
   )
+}
+
+function targetLeases(userData: string, targetId: string): { state?: unknown }[] {
+  const leases = readPersistedProfileState(userData).sshRemotePtyLeases
+  return (Array.isArray(leases) ? leases : []).filter((lease) => lease?.targetId === targetId)
 }
 
 async function serverCall(page: Page, selector: string, method: string): Promise<string> {
@@ -144,11 +148,8 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
     await expect
       .poll(
         () => {
-          const leases = readPersistedProfileState(userData).sshRemotePtyLeases
-          const live = (Array.isArray(leases) ? leases : []).filter(
-            (lease) =>
-              lease?.targetId === remote.targetId &&
-              (lease.state === 'attached' || lease.state === 'detached')
+          const live = targetLeases(userData, remote.targetId).filter(
+            (lease) => lease.state === 'attached' || lease.state === 'detached'
           )
           return JSON.stringify(live)
         },
@@ -182,9 +183,14 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
       .poll(
         async () => {
           const server = await managedServer(page, remote.targetId)
-          return isManaged(server) ? 'managed' : JSON.stringify(server)
+          if (isManaged(server)) {
+            return 'managed'
+          }
+          const leases = targetLeases(userData, remote.targetId)
+          return JSON.stringify({ server, leases })
         },
-        { timeout: CONVERT_TIMEOUT_MS }
+        // The connect returns only after the conversion settled, so this waits on the broadcast.
+        { timeout: 30_000 }
       )
       .toBe('managed')
     const environments = await page.evaluate(() => window.api.runtimeEnvironments.list())
