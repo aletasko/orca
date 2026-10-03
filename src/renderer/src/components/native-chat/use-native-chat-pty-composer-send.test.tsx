@@ -67,6 +67,7 @@ it('routes a Claude chat send outcome to its own pending echo', () => {
   options?.onWriteUnconfirmed?.()
   expect(callbacks.rejected).toHaveBeenCalledWith('pending-1')
   expect(callbacks.unconfirmed).toHaveBeenCalledWith('pending-1')
+  expect(options?.submitViaHostEnter).toBeUndefined()
 })
 
 it('routes a Claude image send outcome to its own pending echo', () => {
@@ -82,9 +83,22 @@ it('routes a Codex chat send outcome to its own pending echo', () => {
   options?.onWriteUnconfirmed?.()
   expect(callbacks.rejected).toHaveBeenCalledWith('pending-1')
   expect(callbacks.unconfirmed).toHaveBeenCalledWith('pending-1')
+  expect(options?.submitViaHostEnter).toBe(true)
+})
+
+it('uses the same host Enter action for a Codex message with images', () => {
+  send('codex', 'chat', 'look', ['/tmp/shot.png'])
+  expect(
+    vi.mocked(sendNativeChatMessageWithImageAttachments).mock.calls[0]?.[5]?.submitViaHostEnter
+  ).toBe(true)
 })
 
 it('leaves a Claude command send on the unobserved write path', () => {
   send('claude', 'command', '/compact')
+  expect(vi.mocked(sendNativeChatMessage).mock.calls[0]?.[3]?.onWriteRejected).toBeUndefined()
+})
+
+it('leaves other agents on their existing send path', () => {
+  send('opencode', 'chat', 'hello')
   expect(vi.mocked(sendNativeChatMessage).mock.calls[0]?.[3]?.onWriteRejected).toBeUndefined()
 })

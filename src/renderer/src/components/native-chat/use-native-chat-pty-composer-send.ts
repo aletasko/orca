@@ -67,9 +67,10 @@ export function useNativeChatPtyComposerSend(args: {
     })
     let pendingId: string | undefined
     const sendOptions =
-      classification === 'chat'
+      classification === 'chat' && (args.agent === 'claude' || args.agent === 'codex')
         ? {
             ...launchSendOptions,
+            ...(args.agent === 'codex' ? { submitViaHostEnter: true } : {}),
             onWriteRejected: () => {
               if (pendingId) {
                 args.optimisticSendOutcome?.reject(pendingId)

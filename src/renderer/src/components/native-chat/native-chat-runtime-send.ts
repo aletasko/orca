@@ -67,7 +67,11 @@ export function sendNativeChatMessage(
       ptyId,
       [
         { data: buildNativeChatPasteBytes(text), delayBeforeMs: 0 },
-        { data: NATIVE_CHAT_SUBMIT, delayBeforeMs: NATIVE_CHAT_SUBMIT_DELAY_MS, enter: true }
+        {
+          data: NATIVE_CHAT_SUBMIT,
+          delayBeforeMs: NATIVE_CHAT_SUBMIT_DELAY_MS,
+          enter: options.submitViaHostEnter === true
+        }
       ],
       options
     )

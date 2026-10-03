@@ -46,7 +46,11 @@ export function sendNativeChatMessageWithImageAttachments(
         delayBeforeMs: NATIVE_CHAT_IMAGE_ATTACHMENT_SETTLE_MS
       })
     }
-    writes.push({ data: NATIVE_CHAT_SUBMIT, delayBeforeMs: NATIVE_CHAT_SUBMIT_DELAY_MS, enter: true })
+    writes.push({
+      data: NATIVE_CHAT_SUBMIT,
+      delayBeforeMs: NATIVE_CHAT_SUBMIT_DELAY_MS,
+      enter: options.submitViaHostEnter === true
+    })
     return sendNativeChatObservedWrites(settings, ptyId, writes, options)
   }
   const durationMs =
