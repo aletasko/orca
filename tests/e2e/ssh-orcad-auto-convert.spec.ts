@@ -244,7 +244,12 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
             return 'managed'
           }
           const leases = targetLeases(userData, remote.targetId)
-          return JSON.stringify({ server, leases })
+          const journal = findOrcadMigrationSourceCutoverForTarget(userData, remote.targetId)
+          return JSON.stringify({
+            server,
+            leases,
+            journal: journal && { phase: journal.phase, updatedAt: journal.updatedAt }
+          })
         },
         { timeout: CONVERT_TIMEOUT_MS }
       )
