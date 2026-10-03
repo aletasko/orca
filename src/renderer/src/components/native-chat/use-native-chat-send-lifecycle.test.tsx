@@ -34,6 +34,27 @@ describe('useNativeChatSendLifecycle', () => {
     expect(onPendingSendCanceled).toHaveBeenCalledWith('pending-2')
   })
 
+  it('finishes a pending Enter after switching from chat to the same terminal', () => {
+    vi.useFakeTimers()
+    const submit = vi.fn()
+    const timer = setTimeout(submit, 500)
+    const pending = { cancel: vi.fn(() => clearTimeout(timer)), settleAfterMs: 500 }
+    const onPendingSendCanceled = vi.fn()
+    let terminalView = false
+    const { result, unmount } = renderHook(() =>
+      useNativeChatSendLifecycle('tab-1', 'pty-1', onPendingSendCanceled, () => terminalView)
+    )
+
+    act(() => result.current.trackPendingSend(pending, 'pending-1'))
+    terminalView = true
+    unmount()
+    act(() => vi.advanceTimersByTime(500))
+
+    expect(pending.cancel).not.toHaveBeenCalled()
+    expect(submit).toHaveBeenCalledOnce()
+    expect(onPendingSendCanceled).not.toHaveBeenCalled()
+  })
+
   it('cancels pending writes immediately on interrupt without double-cancelling', () => {
     vi.useFakeTimers()
     const pending = handle()

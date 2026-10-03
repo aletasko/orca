@@ -96,10 +96,18 @@ const NativeChatComposerPane = forwardRef<NativeChatComposerHandle, NativeChatCo
     const [notice, setNotice] = useState<string | null>(null)
     const [dictationPressed, setDictationPressed] = useState(false)
     const { textareaRef } = useNativeChatComposerAppMenuSelection(imeEnterGesture.isComposing)
+    const preserveSendOnTerminalSwitch = useCallback(
+      () =>
+        Object.values(useAppStore.getState().unifiedTabsByWorktree ?? {}).some((tabs) =>
+          tabs.some((tab) => tab.id === terminalTabId && tab.viewMode === 'terminal')
+        ),
+      [terminalTabId]
+    )
     const { cancelPendingSends, trackPendingSend } = useNativeChatSendLifecycle(
       terminalTabId,
       targetPtyId,
-      onOptimisticSendCanceled
+      onOptimisticSendCanceled,
+      preserveSendOnTerminalSwitch
     )
     const dictationState = useAppStore((store) => store.dictationState)
     const voiceSettings = useAppStore((store) => store.settings?.voice)

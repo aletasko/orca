@@ -9,7 +9,8 @@ export type NativeChatSendLifecycle = {
 export function useNativeChatSendLifecycle(
   terminalTabId: string,
   targetPtyId: string | null,
-  onPendingSendCanceled?: (pendingId: string) => void
+  onPendingSendCanceled?: (pendingId: string) => void,
+  preserveOnTerminalSwitch?: () => boolean
 ): NativeChatSendLifecycle {
   const pendingSendHandlesRef = useRef(
     new Map<
@@ -49,9 +50,16 @@ export function useNativeChatSendLifecycle(
     }, handle.settleAfterMs)
   }, [])
 
-  // Why: delayed Enter/image writes belong to the exact PTY target. A pane
-  // swap or unmount must cancel them before that PTY can close or be reused.
-  useLayoutEffect(() => cancelPendingSends, [cancelPendingSends, targetPtyId, terminalTabId])
+  // A view switch keeps the same PTY alive. Let its delayed Enter finish so a
+  // send is not abandoned between writing the body and submitting it.
+  useLayoutEffect(
+    () => () => {
+      if (!preserveOnTerminalSwitch?.()) {
+        cancelPendingSends()
+      }
+    },
+    [cancelPendingSends, preserveOnTerminalSwitch, targetPtyId, terminalTabId]
+  )
 
   return { cancelPendingSends, trackPendingSend }
 }
