@@ -89,11 +89,17 @@ function logConversionInputs(userData: string, targetId: string): void {
   )
 }
 
-async function serverCall(page: Page, selector: string, method: string): Promise<string> {
+async function serverCall(
+  page: Page,
+  selector: string,
+  method: string,
+  params?: unknown
+): Promise<string> {
   // Why a long budget: a fresh server's first session inventory restores every migrated tab.
   const response = await page.evaluate((args) => window.api.runtimeEnvironments.call(args), {
     selector,
     method,
+    params,
     timeoutMs: 120_000
   })
   const text = JSON.stringify(response)
@@ -277,9 +283,11 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
     expect(environment, 'a managed server registered for the host').toBeTruthy()
     expect(await serverCall(page, environment!.id, 'repo.list')).toContain(host.remoteRepoPath)
     expect(await serverCall(page, environment!.id, 'folderWorkspace.list')).toContain(folderPath)
-    expect(await serverCall(page, environment!.id, 'session.tabs.listAll')).toContain(
-      sessionFilePath
-    )
+    expect(
+      await serverCall(page, environment!.id, 'session.tabs.list', {
+        worktree: `id:${remote.worktreeId}`
+      })
+    ).toContain(sessionFilePath)
 
     // 3. Source retained for a downgrade, then retired once the rollout flag is on.
     expect(findOrcadMigrationSourceCutoverForTarget(userData, remote.targetId)).toMatchObject({
