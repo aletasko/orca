@@ -124,12 +124,13 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
     )
     await ensureTerminalVisible(page, 45_000)
     const ptyId = await waitForActivePanePtyId(page, 60_000)
-    const seededTabId = await getActiveTabId(page)
+    // Any terminal tab that mounts starts a shell, so the session tab is this one once it exits.
+    const sessionTabId = (await getActiveTabId(page)) ?? ''
+    expect(sessionTabId).not.toBe('')
     const marker = `ORCAD-CONVERT-${Date.now()}`
     await execInTerminal(page, ptyId, `echo ${marker}`)
     await waitForTerminalOutput(page, marker, 30_000)
-    // Off the remote worktree first: closing the exited tab would otherwise activate, and spawn, the
-    // next terminal tab there, and that live relay shell keeps the host on the relay.
+    // Off the remote worktree first, so nothing there restarts a shell once this one exits.
     await switchToWorktree(page, localWorktreeId)
     // An exited shell leaves an exit record, which is what lets the gate prove no terminal runs.
     await execInTerminal(page, ptyId, 'exit')
@@ -157,14 +158,6 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
         { timeout: 30_000 }
       )
       .toBe('[]')
-    // Created while its worktree is hidden, so it stays in the session without ever mounting a shell.
-    const sessionTabId = await page.evaluate(
-      (worktreeId) =>
-        window.__store!.getState().createTab(worktreeId, undefined, undefined, {
-          activate: false
-        }).id,
-      remote.worktreeId
-    )
     // An SSH worktree's session lives in its host's partition, not the local one.
     await expect
       .poll(
@@ -197,10 +190,9 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
         leases: targetLeases(userData, remote.targetId).filter(
           (lease) => lease.state === 'attached' || lease.state === 'detached'
         ),
-        seededTabId,
         sessionTabId
       })
-    ).toBe(JSON.stringify({ sessions: [], leases: [], seededTabId, sessionTabId }))
+    ).toBe(JSON.stringify({ sessions: [], leases: [], sessionTabId }))
     await reconnect(page, remote.targetId)
     // Polls the whole state so a timeout reports why the host stayed on the relay.
     await expect
@@ -211,7 +203,7 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
             return 'managed'
           }
           const leases = targetLeases(userData, remote.targetId)
-          return JSON.stringify({ server, leases, seededTabId, sessionTabId })
+          return JSON.stringify({ server, leases, sessionTabId })
         },
         // The connect returns only after the conversion settled, so this waits on the broadcast.
         { timeout: 30_000 }
