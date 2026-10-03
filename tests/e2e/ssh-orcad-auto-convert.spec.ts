@@ -211,6 +211,21 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
       })
     ).toBe(JSON.stringify({ sessions: [], leases: [] }))
     logConversionInputs(userData, remote.targetId)
+    console.log(
+      `[orcad-convert] sessions ${await page.evaluate(
+        async ({ hostId, worktreeId }) => {
+          const host = await window.api.session.get(hostId)
+          const local = await window.api.session.get()
+          const ownedLocal = Object.fromEntries(
+            Object.entries(local).flatMap(([field, value]) =>
+              JSON.stringify(value ?? null).includes(worktreeId) ? [[field, value]] : []
+            )
+          )
+          return JSON.stringify({ host, ownedLocal })
+        },
+        { hostId: toSshExecutionHostId(remote.targetId), worktreeId: remote.worktreeId }
+      )}`
+    )
     await reconnect(page, remote.targetId)
     // Polls the whole state so a timeout reports why the host stayed on the relay.
     await expect
