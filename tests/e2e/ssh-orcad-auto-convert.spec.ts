@@ -2,9 +2,9 @@
  * A relay-era SSH host converts to managed orcad on connect (#24979), on a real host:
  *
  * 1. Without an orcad template the connect keeps the relay, so the host gains relay-era state: a
- *    repository, a folder workspace and a terminal session tab.
+ *    repository, a folder workspace, an editor tab, and a relay terminal that has exited.
  * 2. With the template in place and no relay terminal running, the next connect converts it, and
- *    the new server lists that repository, folder and tab.
+ *    the new server lists that repository, folder and editor tab.
  * 3. The source rows stay retained (downgrade safety) until `orcad-source-retirement` is on; the
  *    connect after that retires them while the server keeps serving the host.
  *
@@ -18,7 +18,6 @@ import type { Page } from '@stablyai/playwright-test'
 import { expect, test } from './helpers/orca-app'
 import {
   ensureTerminalVisible,
-  getActiveTabId,
   switchToWorktree,
   waitForActiveWorktree,
   waitForSessionReady
@@ -124,12 +123,22 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
     )
     await ensureTerminalVisible(page, 45_000)
     const ptyId = await waitForActivePanePtyId(page, 60_000)
-    // Any terminal tab that mounts starts a shell, so the session tab is this one once it exits.
-    const sessionTabId = (await getActiveTabId(page)) ?? ''
-    expect(sessionTabId).not.toBe('')
     const marker = `ORCAD-CONVERT-${Date.now()}`
     await execInTerminal(page, ptyId, `echo ${marker}`)
     await waitForTerminalOutput(page, marker, 30_000)
+    // The session tab is an editor: every mounted terminal tab runs a shell, and an exited one closes.
+    const sessionFilePath = `${host.remoteRepoPath}/README.md`
+    await page.evaluate(
+      ({ filePath, worktreeId }) =>
+        window.__store!.getState().openFile({
+          filePath,
+          relativePath: 'README.md',
+          worktreeId,
+          language: 'markdown',
+          mode: 'edit'
+        }),
+      { filePath: sessionFilePath, worktreeId: remote.worktreeId }
+    )
     // Off the remote worktree first, so nothing there restarts a shell once this one exits.
     await switchToWorktree(page, localWorktreeId)
     // An exited shell leaves an exit record, which is what lets the gate prove no terminal runs.
@@ -163,15 +172,9 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
       .poll(
         () =>
           page.evaluate(
-            async ({ hostId, worktreeId, tabId }) =>
-              JSON.stringify(
-                (await window.api.session.get(hostId)).tabsByWorktree?.[worktreeId] ?? []
-              ).includes(tabId),
-            {
-              hostId: toSshExecutionHostId(remote.targetId),
-              worktreeId: remote.worktreeId,
-              tabId: sessionTabId
-            }
+            async ({ hostId, filePath }) =>
+              JSON.stringify(await window.api.session.get(hostId)).includes(filePath),
+            { hostId: toSshExecutionHostId(remote.targetId), filePath: sessionFilePath }
           ),
         { timeout: 30_000 }
       )
@@ -189,10 +192,9 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
         ),
         leases: targetLeases(userData, remote.targetId).filter(
           (lease) => lease.state === 'attached' || lease.state === 'detached'
-        ),
-        sessionTabId
+        )
       })
-    ).toBe(JSON.stringify({ sessions: [], leases: [], sessionTabId }))
+    ).toBe(JSON.stringify({ sessions: [], leases: [] }))
     await reconnect(page, remote.targetId)
     // Polls the whole state so a timeout reports why the host stayed on the relay.
     await expect
@@ -203,7 +205,7 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
             return 'managed'
           }
           const leases = targetLeases(userData, remote.targetId)
-          return JSON.stringify({ server, leases, sessionTabId })
+          return JSON.stringify({ server, leases })
         },
         // The connect returns only after the conversion settled, so this waits on the broadcast.
         { timeout: 30_000 }
@@ -216,7 +218,9 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
     expect(environment, 'a managed server registered for the host').toBeTruthy()
     expect(await serverCall(page, environment!.id, 'repo.list')).toContain(host.remoteRepoPath)
     expect(await serverCall(page, environment!.id, 'folderWorkspace.list')).toContain(folderPath)
-    expect(await serverCall(page, environment!.id, 'session.tabs.listAll')).toContain(sessionTabId)
+    expect(await serverCall(page, environment!.id, 'session.tabs.listAll')).toContain(
+      sessionFilePath
+    )
 
     // 3. Source retained for a downgrade, then retired once the rollout flag is on.
     expect(findOrcadMigrationSourceCutoverForTarget(userData, remote.targetId)).toMatchObject({
