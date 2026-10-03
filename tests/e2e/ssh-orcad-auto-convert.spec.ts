@@ -18,6 +18,7 @@ import type { Page } from '@stablyai/playwright-test'
 import { expect, test } from './helpers/orca-app'
 import {
   ensureTerminalVisible,
+  getActiveTabId,
   switchToWorktree,
   waitForActiveWorktree,
   waitForSessionReady
@@ -123,6 +124,7 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
     )
     await ensureTerminalVisible(page, 45_000)
     const ptyId = await waitForActivePanePtyId(page, 60_000)
+    const seededTabId = await getActiveTabId(page)
     const marker = `ORCAD-CONVERT-${Date.now()}`
     await execInTerminal(page, ptyId, `echo ${marker}`)
     await waitForTerminalOutput(page, marker, 30_000)
@@ -184,6 +186,21 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
 
     // 2. Template in place: the next connect converts the host.
     cpSync(TEMPLATE_SOURCE!, TEMPLATE_DIR, { recursive: true })
+    // A shell that starts after the checks above still blocks the gate; settle, then look again.
+    await page.waitForTimeout(5_000)
+    expect(
+      JSON.stringify({
+        sessions: await page.evaluate(
+          (connectionId) => window.api.pty.listSessions({ connectionId }),
+          remote.targetId
+        ),
+        leases: targetLeases(userData, remote.targetId).filter(
+          (lease) => lease.state === 'attached' || lease.state === 'detached'
+        ),
+        seededTabId,
+        sessionTabId
+      })
+    ).toBe(JSON.stringify({ sessions: [], leases: [], seededTabId, sessionTabId }))
     await reconnect(page, remote.targetId)
     // Polls the whole state so a timeout reports why the host stayed on the relay.
     await expect
@@ -194,7 +211,7 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
             return 'managed'
           }
           const leases = targetLeases(userData, remote.targetId)
-          return JSON.stringify({ server, leases })
+          return JSON.stringify({ server, leases, seededTabId, sessionTabId })
         },
         // The connect returns only after the conversion settled, so this waits on the broadcast.
         { timeout: 30_000 }
