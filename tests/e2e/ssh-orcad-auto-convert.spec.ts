@@ -21,6 +21,7 @@ import { execInTerminal, waitForActivePanePtyId, waitForTerminalOutput } from '.
 import { connectSshTestTarget } from './helpers/ssh-test-target-connection'
 import { ORCAD_CONVERT_HOST_ENV, startOrcadConvertHost } from './helpers/orcad-convert-host'
 import { findOrcadMigrationSourceCutoverForTarget } from '../../src/main/ssh/orcad-migration-cutover-journal'
+import { toSshExecutionHostId } from '../../src/shared/execution-host'
 
 const HOST = process.env[ORCAD_CONVERT_HOST_ENV]
 const TEMPLATE_SOURCE = process.env.ORCA_E2E_ORCAD_CONVERT_TEMPLATE
@@ -120,15 +121,20 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
     await waitForTerminalOutput(page, marker, 30_000)
     // An exited shell leaves an exit record, which is what lets the gate prove no terminal runs.
     await execInTerminal(page, ptyId, 'exit')
+    // An SSH worktree's session lives in its host's partition, not the local one.
     await expect
       .poll(
         () =>
           page.evaluate(
-            async ({ worktreeId, tabId }) =>
+            async ({ hostId, worktreeId, tabId }) =>
               JSON.stringify(
-                (await window.api.session.get()).tabsByWorktree?.[worktreeId] ?? []
+                (await window.api.session.get(hostId)).tabsByWorktree?.[worktreeId] ?? []
               ).includes(tabId),
-            { worktreeId: remote.worktreeId, tabId: sessionTabId }
+            {
+              hostId: toSshExecutionHostId(remote.targetId),
+              worktreeId: remote.worktreeId,
+              tabId: sessionTabId
+            }
           ),
         { timeout: 30_000 }
       )

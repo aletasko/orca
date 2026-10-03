@@ -8,6 +8,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { z } from 'zod'
+import { getAppEnvironment, hasAppEnvironment } from '../../shared/app-environment'
 import { compareVersions, isValidVersion } from '../updater-fallback'
 
 export const ROLLOUT_FLAG_NAMES = [
@@ -145,10 +146,12 @@ export function isRolloutFlagActive(
  * spec can flip a flag between two connects without the campaign fetch or a relaunch.
  */
 export function readE2ERolloutConfigOverride(
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  // Why fail closed: a packaged release must never take rollout flags from an env-named path.
+  isPackaged: boolean = !hasAppEnvironment() || getAppEnvironment().isPackaged()
 ): RolloutConfig | null {
   const file = env.ORCA_E2E_ROLLOUT_FLAGS_FILE
-  if (!env.ORCA_E2E_USER_DATA_DIR || !file) {
+  if (isPackaged || !env.ORCA_E2E_USER_DATA_DIR || !file) {
     return null
   }
   try {
