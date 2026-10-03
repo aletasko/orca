@@ -144,15 +144,22 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
     // The session tab is an editor: every mounted terminal tab runs a shell, and an exited one closes.
     const sessionFilePath = `${host.remoteRepoPath}/README.md`
     await page.evaluate(
-      ({ filePath, worktreeId }) =>
+      ({ filePath, worktreeId, hostId }) => {
+        // As a sidebar click does: with its host, so the new tab is stamped as that host's.
+        window.__store!.getState().setActiveWorktree(worktreeId, hostId)
         window.__store!.getState().openFile({
           filePath,
           relativePath: 'README.md',
           worktreeId,
           language: 'markdown',
           mode: 'edit'
-        }),
-      { filePath: sessionFilePath, worktreeId: remote.worktreeId }
+        })
+      },
+      {
+        filePath: sessionFilePath,
+        worktreeId: remote.worktreeId,
+        hostId: toSshExecutionHostId(remote.targetId)
+      }
     )
     // Off the remote worktree first, so nothing there restarts a shell once this one exits.
     await switchToWorktree(page, localWorktreeId)
