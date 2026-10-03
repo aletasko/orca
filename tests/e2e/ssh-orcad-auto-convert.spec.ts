@@ -19,6 +19,7 @@ import { expect, test } from './helpers/orca-app'
 import { ensureTerminalVisible, waitForActiveWorktree, waitForSessionReady } from './helpers/store'
 import { execInTerminal, waitForActivePanePtyId, waitForTerminalOutput } from './helpers/terminal'
 import { connectSshTestTarget } from './helpers/ssh-test-target-connection'
+import { readPersistedProfileState } from './helpers/persisted-profile-state'
 import { ORCAD_CONVERT_HOST_ENV, startOrcadConvertHost } from './helpers/orcad-convert-host'
 import { findOrcadMigrationSourceCutoverForTarget } from '../../src/main/ssh/orcad-migration-cutover-journal'
 import { toSshExecutionHostId } from '../../src/shared/execution-host'
@@ -136,6 +137,21 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
               JSON.stringify(await window.api.pty.listSessions({ connectionId })),
             remote.targetId
           ),
+        { timeout: 30_000 }
+      )
+      .toBe('[]')
+    // The gate's other input: no lease may still read as a running terminal.
+    await expect
+      .poll(
+        () => {
+          const leases = readPersistedProfileState(userData).sshRemotePtyLeases
+          const live = (Array.isArray(leases) ? leases : []).filter(
+            (lease) =>
+              lease?.targetId === remote.targetId &&
+              (lease.state === 'attached' || lease.state === 'detached')
+          )
+          return JSON.stringify(live)
+        },
         { timeout: 30_000 }
       )
       .toBe('[]')
