@@ -68,6 +68,21 @@ function targetLeases(userData: string, targetId: string): { state?: unknown }[]
   return (Array.isArray(leases) ? leases : []).filter((lease) => lease?.targetId === targetId)
 }
 
+/** The terminal state the conversion census reads, printed so a refused move names its blocker. */
+function logConversionInputs(userData: string, targetId: string): void {
+  const state = readPersistedProfileState(userData)
+  const forTarget = (rows: unknown): unknown[] =>
+    (Array.isArray(rows) ? rows : []).filter((row) => row?.targetId === targetId)
+  console.log(
+    `[orcad-convert] census inputs ${JSON.stringify({
+      leases: forTarget(state.sshRemotePtyLeases),
+      consumerRecoveries: forTarget(state.sshPtyConsumerRecoveries),
+      unsupportedPtyEntries: state.migrationUnsupportedPtyEntries,
+      legacyPaneKeyAliases: state.legacyPaneKeyAliasEntries
+    })}`
+  )
+}
+
 async function serverCall(page: Page, selector: string, method: string): Promise<string> {
   const response = await page.evaluate((args) => window.api.runtimeEnvironments.call(args), {
     selector,
@@ -195,6 +210,7 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
         )
       })
     ).toBe(JSON.stringify({ sessions: [], leases: [] }))
+    logConversionInputs(userData, remote.targetId)
     await reconnect(page, remote.targetId)
     // Polls the whole state so a timeout reports why the host stayed on the relay.
     await expect
