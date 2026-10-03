@@ -98,10 +98,11 @@ const NativeChatComposerPane = forwardRef<NativeChatComposerHandle, NativeChatCo
     const { textareaRef } = useNativeChatComposerAppMenuSelection(imeEnterGesture.isComposing)
     const preserveSendOnTerminalSwitch = useCallback(
       () =>
+        agent === 'codex' &&
         Object.values(useAppStore.getState().unifiedTabsByWorktree ?? {}).some((tabs) =>
           tabs.some((tab) => tab.id === terminalTabId && tab.viewMode === 'terminal')
         ),
-      [terminalTabId]
+      [agent, terminalTabId]
     )
     const { cancelPendingSends, trackPendingSend } = useNativeChatSendLifecycle(
       terminalTabId,
