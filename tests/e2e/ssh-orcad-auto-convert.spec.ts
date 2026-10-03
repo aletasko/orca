@@ -52,6 +52,12 @@ function managedServer(page: Page, targetId: string): Promise<unknown> {
   )
 }
 
+function isManaged(server: unknown): boolean {
+  return (
+    typeof server === 'object' && server !== null && 'kind' in server && server.kind === 'managed'
+  )
+}
+
 async function serverCall(page: Page, selector: string, method: string): Promise<string> {
   const response = await page.evaluate((args) => window.api.runtimeEnvironments.call(args), {
     selector,
@@ -143,9 +149,16 @@ test('a relay host converts to managed orcad on connect, keeps its source, then 
     // 2. Template in place: the next connect converts the host.
     cpSync(TEMPLATE_SOURCE!, TEMPLATE_DIR, { recursive: true })
     await reconnect(page, remote.targetId)
+    // Polls the whole state so a timeout reports why the host stayed on the relay.
     await expect
-      .poll(() => managedServer(page, remote.targetId), { timeout: CONVERT_TIMEOUT_MS })
-      .toMatchObject({ kind: 'managed' })
+      .poll(
+        async () => {
+          const server = await managedServer(page, remote.targetId)
+          return isManaged(server) ? 'managed' : JSON.stringify(server)
+        },
+        { timeout: CONVERT_TIMEOUT_MS }
+      )
+      .toBe('managed')
     const environments = await page.evaluate(() => window.api.runtimeEnvironments.list())
     const environment = environments.find(
       (entry) => entry.orcadDeployment?.sshTargetId === remote.targetId
