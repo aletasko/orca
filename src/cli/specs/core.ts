@@ -42,9 +42,12 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
   {
     path: ['worktree', 'list'],
     summary: 'List Orca-managed worktrees',
-    usage: 'orca worktree list [--repo <selector>] [--limit <n>] [--json]',
-    allowedFlags: [...GLOBAL_FLAGS, 'repo', 'limit'],
-    notes: [...WORKTREE_LISTING_SCOPE_NOTES]
+    usage: 'orca worktree list [--repo <selector>] [--limit <n>] [--fresh] [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'repo', 'limit', 'fresh'],
+    notes: [
+      ...WORKTREE_LISTING_SCOPE_NOTES,
+      '--fresh asks the host to bypass its worktree caches before listing. On a scan failure or timeout the host may fall back to stored rows, so the acknowledgement is not proof of a current Git state. Refuses to print a listing if the host does not acknowledge the bypass.'
+    ]
   },
   {
     path: ['worktree', 'show'],

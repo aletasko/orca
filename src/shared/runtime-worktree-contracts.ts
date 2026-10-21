@@ -167,4 +167,6 @@ export type RuntimeWorktreeListResult = {
   truncated: boolean
   /** Absent from hosts that predate the field; treat that scope as unverifiable. */
   hostScope?: RuntimeListingHostScope
+  /** Set only when the host honored a `fresh` list request by bypassing its caches. Not an `authoritative` proof. */
+  freshCacheBypass?: true
 }

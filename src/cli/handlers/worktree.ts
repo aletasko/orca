@@ -145,13 +145,24 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
     printResult(result, json, formatWorktreePs)
   },
   'worktree list': async ({ flags, client, json }) => {
+    const fresh = flags.get('fresh')
+    if (typeof fresh === 'string') { throw new RuntimeClientError('invalid_argument', '--fresh does not take a value') }
     const result = await client.call<WithAnnotatedHostScope<RuntimeWorktreeListResult>>(
       'worktree.list',
       {
         repo: getOptionalStringFlag(flags, 'repo'),
-        limit: getOptionalPositiveIntegerFlag(flags, 'limit')
+        limit: getOptionalPositiveIntegerFlag(flags, 'limit'),
+        ...(fresh === true ? { fresh: true } : {})
       }
     )
+    // Fail closed: an old host strips the optional `fresh` field, so without its
+    // cache-bypass acknowledgement the listing may have come from a warm cache.
+    if (fresh === true && result.result.freshCacheBypass !== true) {
+      throw new RuntimeClientError(
+        'fresh_unsupported',
+        'The connected Orca host did not acknowledge the --fresh cache bypass; it is too old to honor it. Upgrade the host or drop --fresh.'
+      )
+    }
     await annotateOmittedHostScope(client, result.result)
     printResult(result, json, formatWorktreeList)
   },
