@@ -52,7 +52,10 @@ export const CliWorkspaceProvenanceRequest = z.object({
 
 export const WorktreeListParams = z.object({
   repo: OptionalString,
-  limit: OptionalFiniteNumber
+  limit: OptionalFiniteNumber,
+  // Additive: old hosts strip it via zod, so callers need `freshCacheBypass` in the
+  // response to know the request was honored (see RuntimeWorktreeListResult).
+  fresh: OptionalBoolean
 })
 
 export const WorktreeDetectedListParams = z.object({

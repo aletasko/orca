@@ -25,8 +25,17 @@ export class OrcaRuntimeWithListManagedWorktrees extends OrcaRuntimeWithRestoreS
   listManagedWorktrees(
     repoSelector?: string,
     limit = DEFAULT_WORKTREE_LIST_LIMIT,
-    sourceDefaultsSupported = true
+    sourceDefaultsSupported = true,
+    fresh = false
   ): Promise<RuntimeWorktreeListResult> {
+    if (fresh) {
+      // Fresh read: bypass the resolved-worktree snapshot and every repo's scan cache
+      // so a just-changed worktree is not reported from a stale 30s/5min entry.
+      this.invalidateResolvedWorktreeCache()
+      for (const repo of this.store?.getRepos() ?? []) {
+        this.invalidateWorktreeScanCacheForRepo(repo.id)
+      }
+    }
     return this.managedWorktreeQueries.list(repoSelector, limit, sourceDefaultsSupported)
   }
 

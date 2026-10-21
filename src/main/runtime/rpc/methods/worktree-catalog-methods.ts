@@ -40,15 +40,19 @@ export const WORKTREE_CATALOG_METHODS = [
     params: WorktreeListParams,
     handler: async (params, context) => {
       const pendingAtScan = snapshotPendingWorktreeRemovals()
-      return projectWorktreeListRemovals(
+      const result = projectWorktreeListRemovals(
         await context.runtime.listManagedWorktrees(
           params.repo,
           params.limit,
-          supportsWorktreeVisibilitySourceDefaults(context)
+          supportsWorktreeVisibilitySourceDefaults(context),
+          params.fresh === true
         ),
         context,
         pendingAtScan
       )
+      // Why: an old host strips `fresh` via zod and returns without this field, so a
+      // caller demanding a fresh read fails closed instead of trusting a cached list.
+      return params.fresh === true ? { ...result, freshCacheBypass: true } : result
     }
   }),
   defineMethod({
