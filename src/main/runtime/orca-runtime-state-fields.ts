@@ -123,7 +123,9 @@ export class OrcaRuntimeWithStateFields extends OrcaRuntimeWithLinearCommands {
     super()
     this.store = store
     // Why here: git-layer move/remove has no store, but must bump the generation of the instance it is about to move or delete.
-    setWorktreeInstanceResolver((path) => (store ? listInstanceIdsAtPath(store, path) : null))
+    setWorktreeInstanceResolver((path, scope) =>
+      store ? listInstanceIdsAtPath(store, path, scope) : null
+    )
     this.machineName.start()
     this.prepareClaudeAuth = deps?.prepareClaudeAuth
     const runtime = this as RuntimeCommandSurfaceHost<this>

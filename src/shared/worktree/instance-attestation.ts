@@ -9,6 +9,8 @@ const OkAttestation = z.object({
   path: z.string().min(1),
   dev: z.string().regex(/^\d+$/),
   ino: z.string().regex(/^\d+$/),
+  // Required, nullable: a host that predates the field is not a host whose pin can be trusted.
+  birthtimeNs: z.string().regex(/^\d+$/).nullable(),
   runtimeEpoch: z.string().min(1),
   generation: z.number().int().nonnegative()
 })

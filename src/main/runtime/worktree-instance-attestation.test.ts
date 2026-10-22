@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as RunnerModule from '../git/runner'
 import type * as GitOptionsModule from '../project-runtime-git-options'
+import type * as SparseCacheModule from '../git/worktree-sparse-checkout-cache'
 import type { Repo } from '../../shared/repo-types'
 import type { WorktreeMeta } from '../../shared/worktree/meta-types'
 import type { RuntimeWorktreeInstanceAttestation } from '../../shared/runtime-worktree-contracts'
@@ -15,12 +16,16 @@ import {
   WORKTREE_RUNTIME_EPOCH,
   bumpWorktreeGenerationBeforeMutation,
   getWorktreeInstanceGeneration,
+  isWorktreeMutationInFlight,
   setWorktreeInstanceResolver
 } from '../worktree-instance-generation'
 
 // Why a recorder instead of a mock of the runner: the ordering claim is "the generation had already
 // moved when Git started", and only the real runner call can observe that moment.
 const gitStarts = vi.hoisted(() => [] as { args: string[]; generation: number | null }[])
+const sparseProbeCalls = vi.hoisted(() => [] as unknown[][])
+// Lets a test hold `git worktree move` open to observe the in-flight window.
+const moveGate = vi.hoisted(() => ({ wait: null as Promise<void> | null }))
 const generationProbe = vi.hoisted(() => ({
   instanceId: '',
   read: (_id: string): number => 0
@@ -29,12 +34,25 @@ vi.mock('../git/runner', async (importOriginal) => {
   const actual = await importOriginal<typeof RunnerModule>()
   return {
     ...actual,
-    gitExecFileAsync: (args: string[], ...rest: unknown[]) => {
+    gitExecFileAsync: async (args: string[], ...rest: unknown[]) => {
       if (args.includes('move') || args.includes('remove')) {
         gitStarts.push({ args, generation: generationProbe.read(generationProbe.instanceId) })
+        if (args.includes('move')) {
+          await moveGate.wait
+        }
       }
       // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: forwards the original call signature untouched.
       return (actual.gitExecFileAsync as (...a: unknown[]) => Promise<unknown>)(args, ...rest)
+    }
+  }
+})
+vi.mock('../git/worktree-sparse-checkout-cache', async (importOriginal) => {
+  const actual = await importOriginal<typeof SparseCacheModule>()
+  return {
+    ...actual,
+    detectSparseCheckoutCached: (...args: Parameters<typeof actual.detectSparseCheckoutCached>) => {
+      sparseProbeCalls.push(args)
+      return actual.detectSparseCheckoutCached(...args)
     }
   }
 })
@@ -146,6 +164,8 @@ describe('worktree.attestInstance runtime attestation', () => {
   let fx: Fixture
   beforeEach(async () => {
     gitStarts.length = 0
+    sparseProbeCalls.length = 0
+    moveGate.wait = null
     generationProbe.instanceId = 'inst-1'
     fx = await makeFixture()
   })
@@ -157,6 +177,8 @@ describe('worktree.attestInstance runtime attestation', () => {
   it('attests a known instance from a fresh scan and lstat, without touching any cache', async () => {
     const stats = await lstat(fx.wtPath, { bigint: true })
     const result = await fx.attest('inst-1')
+    // L1: the scan must not read or populate the sparse-checkout cache either.
+    expect(sparseProbeCalls).toEqual([])
     expect(result).toEqual({
       status: 'ok',
       authoritative: true,
@@ -165,9 +187,18 @@ describe('worktree.attestInstance runtime attestation', () => {
       path: fx.wtPath,
       dev: stats.dev.toString(),
       ino: stats.ino.toString(),
+      birthtimeNs: stats.birthtimeNs.toString(),
       runtimeEpoch: WORKTREE_RUNTIME_EPOCH,
       generation: expect.any(Number)
     })
+  })
+
+  it('keeps no reason on absent/ambiguous/remote so an unknown id and an unusable one look alike', async () => {
+    const absent = await fx.attest('nope')
+    expect(absent).toEqual({ status: 'absent', authoritative: false })
+    fx.repo.executionHostId = 'ssh:box'
+    fx.meta[`repo-1::${fx.wtPath}`] = baseMeta({ instanceId: 'inst-1', hostId: 'ssh:box' })
+    await expect(fx.attest('inst-1')).resolves.toEqual({ status: 'remote', authoritative: false })
   })
 
   it('answers absent for an unknown instance and ambiguous for a duplicated id', async () => {
@@ -257,12 +288,90 @@ describe('worktree.attestInstance runtime attestation', () => {
     const pending = fx.attest('inst-1')
     // Same tick as the call: the attestation has read its generation and is awaiting Git.
     setWorktreeInstanceResolver(() => ['inst-1'])
-    bumpWorktreeGenerationBeforeMutation(fx.wtPath)
+    const settle = bumpWorktreeGenerationBeforeMutation(fx.wtPath)
+    // Settle straight away: this test models a mutation that began and ended inside the attestation.
+    settle()
     await expect(pending).resolves.toMatchObject({
       status: 'unsupported',
       authoritative: false,
       reason: 'changed_during_attestation'
     })
+  })
+
+  it('refuses with mutation_in_flight while git move is running and recovers once it settles', async () => {
+    let release!: () => void
+    moveGate.wait = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const newPath = join(fx.root, 'wt-moving')
+    const moving = moveWorktree(fx.repoPath, fx.wtPath, newPath)
+    try {
+      // The pre-bump has run; Git is parked on the gate. Without the in-flight mark this answers ok.
+      await vi.waitFor(() =>
+        expect(gitStarts.some((entry) => entry.args.includes('move'))).toBe(true)
+      )
+      await expect(fx.attest('inst-1')).resolves.toEqual({
+        status: 'unsupported',
+        authoritative: false,
+        reason: 'mutation_in_flight'
+      })
+    } finally {
+      release()
+      await moving
+    }
+    expect(isWorktreeMutationInFlight('inst-1')).toBe(false)
+    delete fx.meta[`repo-1::${fx.wtPath}`]
+    fx.meta[`repo-1::${newPath}`] = baseMeta({ instanceId: 'inst-1', hostId: 'local' })
+    await expect(fx.attest('inst-1')).resolves.toMatchObject({ status: 'ok', path: newPath })
+  })
+
+  it('clears the in-flight mark in finally even when the mutation fails', async () => {
+    await moveWorktree(fx.repoPath, fx.wtPath, '/proc/forbidden/never').catch(() => undefined)
+    expect(isWorktreeMutationInFlight('inst-1')).toBe(false)
+    await expect(fx.attest('inst-1')).resolves.toMatchObject({ status: 'ok' })
+  })
+
+  it('scopes the in-flight mark to the mutated instance', async () => {
+    const settle = bumpWorktreeGenerationBeforeMutation(fx.wtPath)
+    try {
+      expect(isWorktreeMutationInFlight('inst-1')).toBe(true)
+      expect(isWorktreeMutationInFlight('inst-other')).toBe(false)
+    } finally {
+      settle()
+    }
+    expect(isWorktreeMutationInFlight('inst-1')).toBe(false)
+  })
+
+  it('reports a birth time that differs when a root is recreated with the same (dev, ino)', async () => {
+    const before = await fx.attest('inst-1')
+    if (before.status !== 'ok') {
+      throw new Error('fixture attestation must be ok')
+    }
+    expect(before.birthtimeNs).toMatch(/^\d+$/)
+    // Delete and recreate until the filesystem hands the freed inode back (ext4 does at once).
+    let reused: RuntimeWorktreeInstanceAttestation | null = null
+    await rm(fx.wtPath, { recursive: true, force: true })
+    for (let attempt = 0; attempt < 50 && !reused; attempt += 1) {
+      await mkdir(fx.wtPath)
+      const candidate = await fx.attest('inst-1')
+      if (candidate.status === 'ok' && candidate.ino === before.ino) {
+        reused = candidate
+      } else {
+        await rm(fx.wtPath, { recursive: true, force: true })
+      }
+    }
+    // Where the inode was not reused (other filesystems) the pair differs anyway; the birth time
+    // must differ in both cases.
+    const recreated =
+      reused ??
+      (await (async () => {
+        await mkdir(fx.wtPath, { recursive: true })
+        return fx.attest('inst-1')
+      })())
+    expect(recreated.status).toBe('ok')
+    if (recreated.status === 'ok') {
+      expect(recreated.birthtimeNs).not.toBe(before.birthtimeNs)
+    }
   })
 })
 

@@ -29,6 +29,11 @@ vi.mock('fs/promises', () => ({
 
 import { registerFilesystemMutationHandlers } from './filesystem-mutations'
 import {
+  getWorktreeInstanceGeneration,
+  isWorktreeMutationInFlight,
+  setWorktreeInstanceResolver
+} from '../worktree-instance-generation'
+import {
   registerSshFilesystemProvider,
   unregisterSshFilesystemProvider
 } from '../providers/ssh-filesystem-dispatch'
@@ -169,6 +174,28 @@ describe('registerFilesystemMutationHandlers', () => {
     await handlers.get('fs:rename')!(null, { oldPath, newPath })
 
     expect(renameMock).toHaveBeenCalledWith(oldPath, newPath)
+  })
+
+  it('raises the worktree generation before renaming a registered worktree root', async () => {
+    const oldPath = path.resolve('/workspace/repo/old-root')
+    const newPath = path.resolve('/workspace/repo/new-root')
+    setWorktreeInstanceResolver((resolvedPath) => (resolvedPath === oldPath ? ['inst-ren'] : []))
+    const start = getWorktreeInstanceGeneration('inst-ren')
+    let generationAtRename = -1
+    let inFlightAtRename = false
+    renameMock.mockImplementationOnce(async () => {
+      generationAtRename = getWorktreeInstanceGeneration('inst-ren')
+      inFlightAtRename = isWorktreeMutationInFlight('inst-ren')
+    })
+    try {
+      await handlers.get('fs:rename')!(null, { oldPath, newPath })
+    } finally {
+      setWorktreeInstanceResolver(null)
+    }
+    expect(generationAtRename).toBe(start + 1)
+    expect(inFlightAtRename).toBe(true)
+    expect(getWorktreeInstanceGeneration('inst-ren')).toBe(start + 2)
+    expect(isWorktreeMutationInFlight('inst-ren')).toBe(false)
   })
 
   it('serializes concurrent local renames targeting the same destination', async () => {

@@ -38,6 +38,7 @@ export function formatWorktreeInstanceAttestation(
         `host: ${attestation.executionHostId}`,
         `path: ${attestation.path}`,
         `dev/ino: ${attestation.dev}/${attestation.ino}`,
+        `birthtimeNs: ${attestation.birthtimeNs ?? 'none (pin with a held fd)'}`,
         `runtimeEpoch: ${attestation.runtimeEpoch}`,
         `generation: ${attestation.generation}`
       ].join('\n')

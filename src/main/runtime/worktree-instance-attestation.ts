@@ -11,7 +11,7 @@ import { isFolderRepo } from '../../shared/repo-kind'
 import { FOLDER_WORKSPACE_INSTANCE_SEPARATOR, splitWorktreeId } from '../../shared/worktree/id'
 import { readAllWorktreeMetaForHost } from '../persistence/host-qualified-worktree-meta'
 import type { HostQualifiedWorktreeMetaStore } from '../persistence/host-qualified-worktree-meta'
-import { areWorktreePathsEqual } from '../git/worktree-path-comparison'
+import { areWorktreePathsEqual, canonicalWorktreePath } from '../git/worktree-path-comparison'
 
 type MetaStore = Pick<
   HostQualifiedWorktreeMetaStore,
@@ -25,7 +25,14 @@ export type WorktreeMetaRow = {
   meta: WorktreeMeta
 }
 
-export type RootStat = { dev: bigint; ino: bigint; isDirectory: boolean; isSymbolicLink: boolean }
+export type RootStat = {
+  dev: bigint
+  ino: bigint
+  /** statx btime in ns; 0n when the filesystem does not report one. */
+  birthtimeNs: bigint
+  isDirectory: boolean
+  isSymbolicLink: boolean
+}
 
 export type WorktreeAttestationDeps = {
   store: MetaStore & { getRepos: () => Repo[] }
@@ -35,6 +42,8 @@ export type WorktreeAttestationDeps = {
   lstatRoot: (path: string) => Promise<RootStat>
   runtimeEpoch: string
   getGeneration: (instanceId: string) => number
+  /** True from a move/remove's pre-bump until it settles. */
+  isMutationInFlight: (instanceId: string) => boolean
   isRemovalPending: (worktreeId: string) => boolean
   platform: NodeJS.Platform
   /** Throws for a project runtime the host cannot route (WSL distro, repair needed). */
@@ -72,15 +81,39 @@ function soleRepoHost(repos: readonly Repo[], worktreeId: string): ExecutionHost
   return owners.length === 1 ? getRepoExecutionHostId(owners[0]) : null
 }
 
-/** Worktree ids (any host) whose locator path is `path`, for pre-mutation generation bumps. */
+/** True when `child` is `ancestor` itself or lies below it (POSIX and Windows syntax). */
+function isPathAtOrUnder(child: string, ancestor: string): boolean {
+  if (areWorktreePathsEqual(child, ancestor)) {
+    return true
+  }
+  const canonicalAncestor = canonicalWorktreePath(ancestor)
+  const prefix =
+    canonicalAncestor.endsWith('/') || canonicalAncestor.endsWith('\\')
+      ? canonicalAncestor
+      : `${canonicalAncestor}${canonicalAncestor.includes('\\') ? '\\' : '/'}`
+  return canonicalWorktreePath(child).startsWith(prefix)
+}
+
+/**
+ * Instance ids (any host) whose locator path is `path` (`at`) or is `path` or lies below it
+ * (`at-or-under`), for pre-mutation generation bumps.
+ */
 export function listInstanceIdsAtPath(
   store: WorktreeAttestationDeps['store'],
-  path: string
+  path: string,
+  scope: 'at' | 'at-or-under' = 'at'
 ): string[] {
   const instanceIds = new Set<string>()
   for (const row of listWorktreeMetaRows(store)) {
     const parsed = splitWorktreeId(row.worktreeId)
-    if (row.meta.instanceId && parsed && areWorktreePathsEqual(parsed.worktreePath, path)) {
+    if (!row.meta.instanceId || !parsed) {
+      continue
+    }
+    const hit =
+      scope === 'at'
+        ? areWorktreePathsEqual(parsed.worktreePath, path)
+        : isPathAtOrUnder(parsed.worktreePath, path)
+    if (hit) {
       instanceIds.add(row.meta.instanceId)
     }
   }
@@ -91,7 +124,12 @@ function refused(
   status: 'absent' | 'ambiguous' | 'remote' | 'unsupported',
   reason: string
 ): RuntimeWorktreeInstanceAttestation {
-  return { status, authoritative: false, reason }
+  // Why no reason for absent/ambiguous/remote: it would tell a token holder "no such id" apart from
+  // "exists but unusable" (removal pending, repo gone, legacy row) beyond what the status already says.
+  // `unsupported` keeps its reason: it is the actionable one (symlink root, mutation in flight, ...).
+  return status === 'unsupported'
+    ? { status, authoritative: false, reason }
+    : { status, authoritative: false }
 }
 
 /**
@@ -103,12 +141,22 @@ export async function attestWorktreeInstance(
   instanceId: string,
   deps: WorktreeAttestationDeps
 ): Promise<RuntimeWorktreeInstanceAttestation> {
+  // Why refuse while a mutation is in flight: its pre-bump already happened, so the generation read
+  // below would look current while the root is being moved or deleted. Only the settle clears it.
+  if (deps.isMutationInFlight(instanceId)) {
+    return refused('unsupported', 'mutation_in_flight')
+  }
   // Why read first and compare after: a move/remove through Orca bumps before it touches the disk,
   // so an unchanged value brackets a window in which no such mutation began.
   const generation = deps.getGeneration(instanceId)
   const verdict = await attestOnce(instanceId, generation, deps)
-  if (verdict.status === 'ok' && deps.getGeneration(instanceId) !== generation) {
-    return refused('unsupported', 'changed_during_attestation')
+  if (verdict.status === 'ok') {
+    if (deps.isMutationInFlight(instanceId)) {
+      return refused('unsupported', 'mutation_in_flight')
+    }
+    if (deps.getGeneration(instanceId) !== generation) {
+      return refused('unsupported', 'changed_during_attestation')
+    }
   }
   return verdict
 }
@@ -198,6 +246,9 @@ async function attestOnce(
     path,
     dev: root.dev.toString(),
     ino: root.ino.toString(),
+    // Why: a deleted and recreated root can reuse the same (dev, ino); the birth time is the only
+    // observable that differs. null = filesystem reports none, so the broker must hold an fd instead.
+    birthtimeNs: root.birthtimeNs > 0n ? root.birthtimeNs.toString() : null,
     runtimeEpoch: deps.runtimeEpoch,
     generation
   }

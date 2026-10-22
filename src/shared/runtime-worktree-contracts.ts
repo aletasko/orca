@@ -186,6 +186,12 @@ export type RuntimeWorktreeInstanceAttestation =
       /** Decimal strings: 64-bit st_dev/st_ino do not survive a JSON number. */
       dev: string
       ino: string
+      /**
+       * statx birth time in ns (decimal string), or null when the filesystem reports none. A deleted
+       * and recreated root can reuse the same (dev, ino); the birth time then still differs. Pin it
+       * together with dev/ino. null means no discriminator: only a held fd can pin that root.
+       */
+      birthtimeNs: string | null
       /** New on every runtime process start. `generation` is only comparable under the same epoch. */
       runtimeEpoch: string
       /** Per instance; raised before any move/remove/root change done through Orca. */
@@ -194,6 +200,6 @@ export type RuntimeWorktreeInstanceAttestation =
   | {
       status: 'absent' | 'ambiguous' | 'remote' | 'unsupported'
       authoritative: false
-      /** Diagnostic only; never branch on it. */
+      /** Diagnostic only; never branch on it. Present only for `unsupported`. */
       reason?: string
     }

@@ -10,6 +10,7 @@ const OK_REPLY = {
   path: '/w/one',
   dev: '64768',
   ino: '1234',
+  birthtimeNs: '1792651568974728796',
   runtimeEpoch: 'epoch-a',
   generation: 3
 }
@@ -33,6 +34,20 @@ describe('attestWorktreeInstanceViaClient', () => {
     const { client, calls } = clientReturning(OK_REPLY)
     await expect(attestWorktreeInstanceViaClient(client, 'inst-1')).resolves.toEqual(OK_REPLY)
     expect(calls).toEqual([{ method: 'worktree.attestInstance', params: { instanceId: 'inst-1' } }])
+  })
+
+  it('accepts a null birth time but not a missing one (a host that predates the field)', async () => {
+    const withNull = clientReturning({ ...OK_REPLY, birthtimeNs: null })
+    await expect(attestWorktreeInstanceViaClient(withNull.client, 'inst-1')).resolves.toMatchObject(
+      { status: 'ok', authoritative: true, birthtimeNs: null }
+    )
+    const { birthtimeNs: _omitted, ...legacy } = OK_REPLY
+    const missing = clientReturning(legacy)
+    await expect(attestWorktreeInstanceViaClient(missing.client, 'inst-1')).resolves.toEqual({
+      status: 'unsupported',
+      authoritative: false,
+      reason: 'malformed_reply'
+    })
   })
 
   it('is not authoritative against a host that lacks the method', async () => {

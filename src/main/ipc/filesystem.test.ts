@@ -1,4 +1,9 @@
 import { EventEmitter } from 'node:events'
+import {
+  getWorktreeInstanceGeneration,
+  isWorktreeMutationInFlight,
+  setWorktreeInstanceResolver
+} from '../worktree-instance-generation'
 import path from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -460,6 +465,29 @@ describe('registerFilesystemHandlers', () => {
 
     expect(trashItemMock).toHaveBeenCalledWith(targetPath)
     expect(tryDeleteWslUncPathMock).toHaveBeenCalledWith(targetPath, { recursive: undefined })
+  })
+
+  it('raises the worktree generation before trashing a registered worktree root', async () => {
+    registerFilesystemHandlers(store as never)
+    setWorktreeInstanceResolver((resolvedPath) =>
+      resolvedPath === REPO_PATH ? ['inst-trash'] : []
+    )
+    const seen: { generation: number; inFlight: boolean }[] = []
+    trashItemMock.mockImplementationOnce(async () => {
+      seen.push({
+        generation: getWorktreeInstanceGeneration('inst-trash'),
+        inFlight: isWorktreeMutationInFlight('inst-trash')
+      })
+    })
+    const start = getWorktreeInstanceGeneration('inst-trash')
+    try {
+      await handlers.get('fs:deletePath')!(null, { targetPath: REPO_PATH })
+    } finally {
+      setWorktreeInstanceResolver(null)
+    }
+    expect(seen).toEqual([{ generation: start + 1, inFlight: true }])
+    expect(getWorktreeInstanceGeneration('inst-trash')).toBe(start + 2)
+    expect(isWorktreeMutationInFlight('inst-trash')).toBe(false)
   })
 
   // Regression for #6415: WSL UNC paths have no Recycle Bin, so shell.trashItem

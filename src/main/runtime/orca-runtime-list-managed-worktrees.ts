@@ -21,9 +21,10 @@ import { getLocalProjectWorktreeGitOptions } from '../project-runtime-git-option
 import { pendingWorktreeRemovals } from '../worktree-removal-table'
 import {
   WORKTREE_RUNTIME_EPOCH,
-  getWorktreeInstanceGeneration
+  getWorktreeInstanceGeneration,
+  isWorktreeMutationInFlight
 } from '../worktree-instance-generation'
-import { scanLocalRepoWorktreesForResolution } from './repo-worktree-resolution-scan'
+import { scanLocalRepoWorktreesForAttestation } from './repo-worktree-resolution-scan'
 import { attestWorktreeInstance } from './worktree-instance-attestation'
 import {
   filterWorkspacePortProbes,
@@ -51,28 +52,27 @@ export class OrcaRuntimeWithListManagedWorktrees extends OrcaRuntimeWithRestoreS
 
   /**
    * Authoritative single-instance lookup for a caller that must not trust the cached listing.
-   * Uses its own Git scan and `lstat`; none of the resolved-snapshot or per-repo scan caches are read.
+   * Uses its own Git scan (no sparse-checkout annotation) and `lstat`; none of the resolved-snapshot,
+   * per-repo scan or sparse-checkout caches are read or written.
    */
   attestWorktreeInstance(instanceId: string): Promise<RuntimeWorktreeInstanceAttestation> {
     const store = this.requireStore()
     return attestWorktreeInstance(instanceId, {
       store,
-      scanLocalRepo: (repo) =>
-        scanLocalRepoWorktreesForResolution(
-          repo.path,
-          getLocalProjectWorktreeGitOptions(store, repo)
-        ),
+      scanLocalRepo: (repo) => scanLocalRepoWorktreesForAttestation(repo.path),
       lstatRoot: async (path) => {
         const stats = await lstat(path, { bigint: true })
         return {
           dev: stats.dev,
           ino: stats.ino,
+          birthtimeNs: stats.birthtimeNs,
           isDirectory: stats.isDirectory(),
           isSymbolicLink: stats.isSymbolicLink()
         }
       },
       runtimeEpoch: WORKTREE_RUNTIME_EPOCH,
       getGeneration: getWorktreeInstanceGeneration,
+      isMutationInFlight: isWorktreeMutationInFlight,
       isRemovalPending: (worktreeId) => pendingWorktreeRemovals.has(worktreeId),
       platform: process.platform,
       assertPlainLocalGit: (repo) => {
