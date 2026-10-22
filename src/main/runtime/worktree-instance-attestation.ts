@@ -246,8 +246,9 @@ async function attestOnce(
     path,
     dev: root.dev.toString(),
     ino: root.ino.toString(),
-    // Why: a deleted and recreated root can reuse the same (dev, ino); the birth time is the only
-    // observable that differs. null = filesystem reports none, so the broker must hold an fd instead.
+    // Why: a deleted and recreated root can reuse the same (dev, ino); the birth time is a best-effort
+    // detector of that (tick granularity: an immediate recreation often keeps the same value), never
+    // a unique discriminator. The broker must hold an O_PATH|O_NOFOLLOW fd from pin to exec regardless.
     birthtimeNs: root.birthtimeNs > 0n ? root.birthtimeNs.toString() : null,
     runtimeEpoch: deps.runtimeEpoch,
     generation

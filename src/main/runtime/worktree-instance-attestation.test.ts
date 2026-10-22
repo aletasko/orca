@@ -343,6 +343,9 @@ describe('worktree.attestInstance runtime attestation', () => {
   })
 
   it('reports a birth time that differs when a root is recreated with the same (dev, ino)', async () => {
+    // Best-effort detector only: the gap between attestations here is several ms. An immediate
+    // recreation (same filesystem tick) can keep the same birth time (85% measured on ext4), so this
+    // does not prove uniqueness; the broker's held O_PATH|O_NOFOLLOW fd is the real guarantee.
     const before = await fx.attest('inst-1')
     if (before.status !== 'ok') {
       throw new Error('fixture attestation must be ok')

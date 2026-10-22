@@ -188,8 +188,12 @@ export type RuntimeWorktreeInstanceAttestation =
       ino: string
       /**
        * statx birth time in ns (decimal string), or null when the filesystem reports none. A deleted
-       * and recreated root can reuse the same (dev, ino); the birth time then still differs. Pin it
-       * together with dev/ino. null means no discriminator: only a held fd can pin that root.
+       * and recreated root can reuse the same (dev, ino). The birth time is a BEST-EFFORT detector
+       * of that, not a unique discriminator: the filesystem stamps it at tick granularity, so a root
+       * recreated at once can keep the same value (measured on ext4: 2000/2000 inode reuse, equal
+       * birth time in 1709/2000 = 85% of immediate recreations). Pin it together with dev/ino as an
+       * extra check only. The pin MUST always be an O_PATH|O_NOFOLLOW fd on the root, held open from
+       * pin to exec, whether or not this is null; that fd is the only real guarantee.
        */
       birthtimeNs: string | null
       /** New on every runtime process start. `generation` is only comparable under the same epoch. */

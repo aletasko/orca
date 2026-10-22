@@ -102,6 +102,23 @@ export function bumpWorktreeGenerationBeforeMutation(path: string): () => void {
  * files inside a checkout. Only a target that is, or contains, a registered checkout root counts; a
  * target matching no instance is a no-op. If the runtime cannot resolve instances at all, it is
  * unattributed.
+ *
+ * NOT covered (the generation does not move; the attestation's re-read and the broker's held fd
+ * are the only protection):
+ * - Changes made outside Orca: `rm`, `mv`, `git worktree move/remove` from a shell.
+ * - `files.commitUpload` (copy + `rm` of a temp), `fs:copy`, the rollback `rename` in
+ *   filesystem-download-promotion (including `promoteDownloadedFile` over an existing destination),
+ *   creation cleanup in worktree-apfs-clone and repo-creation-handlers: none moves or removes an
+ *   existing attestable root in normal use.
+ * - A rename whose DESTINATION overwrites a root (needs an empty directory; a root holds `.git`).
+ * - SSH/remote hosts: the host answers `remote`, which is already a refusal.
+ * - L-R2: matching is lexical, not resolved. `isPathAtOrUnder` normalizes with posix resolve and
+ *   does no `realpath` and no case folding. A locator registered through a symlinked ancestor, or
+ *   with a different case on a case-insensitive filesystem (macOS), does not match the mutated
+ *   path, so the bump is a silent no-op, not an unattributed block.
+ * - L-R3: a mutation promise that never settles (hung git, `rm` stuck on NFS) leaves the instance
+ *   (every instance, for an unattributed one) `mutation_in_flight` until the process restarts.
+ *   There is no timeout. Deny-safe, but it can block attestation indefinitely.
  */
 export function bumpWorktreeGenerationBeforePathMutation(path: string): () => void {
   return beginMutation(path, 'at-or-under', false)

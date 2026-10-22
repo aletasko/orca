@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { listInstanceIdsAtPath } from './worktree-instance-attestation'
 import type { WorktreeMeta } from '../../shared/worktree/meta-types'
 import {
+  bumpWorktreeGenerationBeforePathMutation,
   getWorktreeInstanceGeneration,
   isWorktreeMutationInFlight,
   setWorktreeInstanceResolver
@@ -117,5 +118,42 @@ describe('generic file rename/delete over a worktree root', () => {
     await mkdir(join(base, 'gro'))
     await renameLocalPathSerializedByDestination(join(base, 'gro'), join(base, 'gro2'))
     expect(getWorktreeInstanceGeneration('inst-1')).toBe(start)
+  })
+
+  it.each([
+    [
+      'throws',
+      () =>
+        setWorktreeInstanceResolver(() => {
+          throw new Error('resolver broke')
+        })
+    ],
+    ['is absent', () => setWorktreeInstanceResolver(null)]
+  ])(
+    'blocks every instance when the resolver %s on an at-or-under path',
+    async (_name, arrange) => {
+      arrange()
+      const start = getWorktreeInstanceGeneration('inst-1')
+      // Not tied to any instance by path: only the failing resolver can make this "unattributed".
+      const settle = bumpWorktreeGenerationBeforePathMutation(join(base, 'elsewhere'))
+      expect(getWorktreeInstanceGeneration('inst-1')).toBe(start + 1)
+      expect(isWorktreeMutationInFlight('inst-1')).toBe(true)
+      expect(isWorktreeMutationInFlight('some-other-instance')).toBe(true)
+      settle()
+      expect(getWorktreeInstanceGeneration('inst-1')).toBe(start + 2)
+      expect(isWorktreeMutationInFlight('inst-1')).toBe(false)
+      expect(isWorktreeMutationInFlight('some-other-instance')).toBe(false)
+    }
+  )
+
+  it('blocks and bumps through a real rename when the resolver throws', async () => {
+    setWorktreeInstanceResolver(() => {
+      throw new Error('resolver broke')
+    })
+    await mkdir(join(base, 'plain'))
+    const start = getWorktreeInstanceGeneration('inst-1')
+    await renameLocalPathSerializedByDestination(join(base, 'plain'), join(base, 'plain2'))
+    expect(getWorktreeInstanceGeneration('inst-1')).toBe(start + 2)
+    expect(isWorktreeMutationInFlight('inst-1')).toBe(false)
   })
 })
