@@ -4,7 +4,7 @@ import type { SshMutationExpectation } from '../../../shared/ssh-types'
 import { assertSshMutationExpectation } from '../../ssh/ssh-connection-generation'
 import { requireSshFilesystemProvider } from '../../providers/ssh-filesystem-dispatch'
 import { tryDeleteWslUncPath } from '../../wsl-unc-delete'
-import { bumpWorktreeGenerationBeforePathMutation } from '../../worktree-instance-generation'
+import { beginNotifiedWorktreePathMutation } from '../../worktree-instance-generation'
 import { authorizeExternalPath, resolveAuthorizedPath } from '../filesystem-auth'
 import { isENOENT } from '../filesystem-path-containment'
 import { registerFilesystemMutationHandlers } from '../filesystem-mutations'
@@ -69,7 +69,7 @@ export function registerFilesystemWriteHandlers(context: FilesystemHandlerContex
         preserveSymlink: true
       })
       // Why before the delete: trashing a worktree root (or an ancestor of one) removes it without `git worktree remove`.
-      const settleGeneration = bumpWorktreeGenerationBeforePathMutation(targetPath)
+      const settleGeneration = await beginNotifiedWorktreePathMutation(targetPath, 'remove')
       try {
         // Why: WSL UNC targets have no Recycle Bin (shell.trashItem throws), so hard-delete via `rm` inside the distro (issue #6415).
         if (await tryDeleteWslUncPath(targetPath, { recursive: args.recursive })) {

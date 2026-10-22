@@ -29,6 +29,10 @@ export function classifyRuntimeLongPoll(request: RpcRequest): RuntimeLongPollCla
   if (request.method === 'browser.clientHost.attach') {
     return 'browser-host'
   }
+  // Why: parks until an event or its timeout; needs the abort signal to drop the poll on disconnect.
+  if (request.method === 'worktree.watchChanges') {
+    return 'wait'
+  }
   if (request.method === 'terminal.wait') {
     return 'wait'
   }

@@ -530,6 +530,7 @@ import { UpdaterCheckParams } from './updater-params'
 import { WorkspacePortKillParams, WorkspacePortScanParams } from './workspace-ports-params'
 import { WorktreeCreate, WorktreePrefetchCreateBase } from './worktree-create-params'
 import {
+  WorktreeAckChangeParams,
   WorktreeActivate,
   WorktreeAttestInstanceParams,
   WorktreeDetectedListParams,
@@ -542,7 +543,8 @@ import {
   WorktreeSelector as WorktreeSelectorOfWorktreeParams,
   WorktreeSet,
   WorktreeSortOrder,
-  WorktreeTeardownMissingTerminalsParams
+  WorktreeTeardownMissingTerminalsParams,
+  WorktreeWatchChangesParams
 } from './worktree-params'
 import { SkillBundleInstallRequestSchema } from '../skill-bundle-install-contract'
 import { SkillDeleteRequestSchema } from '../skill-delete-contract'
@@ -1184,6 +1186,7 @@ export const RPC_PARAMS_BY_METHOD = {
   'updater.install': null,
   'workspacePorts.kill': WorkspacePortKillParams,
   'workspacePorts.scan': WorkspacePortScanParams,
+  'worktree.ackChange': WorktreeAckChangeParams,
   'worktree.activate': WorktreeActivate,
   'worktree.attestInstance': WorktreeAttestInstanceParams,
   'worktree.create': WorktreeCreate,
@@ -1201,7 +1204,8 @@ export const RPC_PARAMS_BY_METHOD = {
   'worktree.set': WorktreeSet,
   'worktree.show': WorktreeSelectorOfWorktreeParams,
   'worktree.sleep': WorktreeSelectorOfWorktreeParams,
-  'worktree.teardownMissingTerminals': WorktreeTeardownMissingTerminalsParams
+  'worktree.teardownMissingTerminals': WorktreeTeardownMissingTerminalsParams,
+  'worktree.watchChanges': WorktreeWatchChangesParams
 } as const
 
 // Why: these methods bind a schema the shared contract cannot hold because its value

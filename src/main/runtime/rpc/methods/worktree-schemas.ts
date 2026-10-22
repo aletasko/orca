@@ -1,5 +1,7 @@
 export {
+  WorktreeAckChangeParams,
   WorktreeAttestInstanceParams,
+  WorktreeWatchChangesParams,
   AutomationWorkspaceProvenanceRequest,
   CliWorkspaceProvenanceRequest,
   OptionalTuiAgent,

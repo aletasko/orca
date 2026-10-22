@@ -63,6 +63,24 @@ export const WorktreeAttestInstanceParams = z.object({
   instanceId: z.string().min(1).max(128)
 })
 
+// Why a long id: the subscriber id doubles as the key of its acknowledgements, so it must not be guessable
+// by another token holder; the host never reveals the ids of other subscribers.
+const WorktreeChangeSubscriberId = z.string().min(16).max(128)
+
+export const WorktreeWatchChangesParams = z.object({
+  subscriberId: WorktreeChangeSubscriberId,
+  // Absent on the first poll (start from now); afterwards the `lastSeq` of the previous reply.
+  afterSeq: z.number().int().nonnegative().optional(),
+  // The `epoch` of the previous reply; a different one voids the cursor and is reported as a gap.
+  epoch: z.string().min(1).max(128).optional(),
+  timeoutMs: z.number().int().min(0).max(60_000).optional()
+})
+
+export const WorktreeAckChangeParams = z.object({
+  subscriberId: WorktreeChangeSubscriberId,
+  seqs: z.array(z.number().int().positive()).min(1).max(256)
+})
+
 export const WorktreeDetectedListParams = z.object({
   repo: z
     .unknown()

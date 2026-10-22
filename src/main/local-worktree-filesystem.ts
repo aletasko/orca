@@ -2,7 +2,7 @@ import { runProcess } from '../shared/child-process/run-process'
 import { lstat, readFile } from 'node:fs/promises'
 import { buildWslExecArgs, quotePosixShell } from '../shared/wsl-login-shell-command'
 import { removeHostTree } from './host-tree-removal'
-import { bumpWorktreeGenerationBeforeMutation } from './worktree-instance-generation'
+import { beginNotifiedWorktreeMutation } from './worktree-instance-generation'
 import { toLinuxPath } from './wsl'
 import { resolveWslInteropSpawnCwd } from './wsl-interop-spawn-directory'
 import type { ReadPath, StatPath } from './worktree-orphan-gitdir-proof'
@@ -124,7 +124,7 @@ export async function removeLocalWorktreePath(
   targetPath: string,
   options: LocalWorktreeFilesystemOptions = {}
 ): Promise<void> {
-  const settleGeneration = bumpWorktreeGenerationBeforeMutation(targetPath)
+  const settleGeneration = await beginNotifiedWorktreeMutation(targetPath, 'remove')
   try {
     const distro = options.wslDistro?.trim()
     if (!shouldUseWslFilesystem(options) || !distro) {

@@ -1,6 +1,6 @@
 import { realpath, rename } from 'node:fs/promises'
 import { dirname, normalize } from 'node:path'
-import { bumpWorktreeGenerationBeforePathMutation } from './worktree-instance-generation'
+import { beginNotifiedWorktreePathMutation } from './worktree-instance-generation'
 import { assertNoClobberRenameDestinationAvailable } from '../shared/filesystem-rename-collision'
 
 // Why: parent scope covers native Unicode aliases without guessing each filesystem's collation.
@@ -41,7 +41,7 @@ export async function renameLocalPathSerializedByDestination(
   await previous
   // Why before the rename: this is the choke point of fs:rename and files.rename, and it can move a
   // worktree root (or an ancestor of one) without going through `git worktree move`.
-  const settleGeneration = bumpWorktreeGenerationBeforePathMutation(oldPath)
+  const settleGeneration = await beginNotifiedWorktreePathMutation(oldPath, 'move')
   try {
     await assertNoClobberRenameDestinationAvailable(oldPath, newPath)
     await rename(oldPath, newPath)

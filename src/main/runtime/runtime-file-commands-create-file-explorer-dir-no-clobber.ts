@@ -6,7 +6,7 @@ import { resolveAuthorizedPath } from '../ipc/filesystem-auth'
 import { constants, copyFile, mkdir, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { renameLocalPathSerializedByDestination } from '../destination-serialized-local-rename'
-import { bumpWorktreeGenerationBeforePathMutation } from '../worktree-instance-generation'
+import { beginNotifiedWorktreePathMutation } from '../worktree-instance-generation'
 
 export class RuntimeFileCommandsWithCreateFileExplorerDirNoClobber extends RuntimeFileCommandsWithWriteFileExplorerFile {
   async createFileExplorerDirNoClobber(
@@ -162,7 +162,7 @@ export class RuntimeFileCommandsWithCreateFileExplorerDirNoClobber extends Runti
     })
     // Why before the delete: an empty `relativePath` resolves to the worktree root itself, and an
     // ancestor directory takes nested roots with it.
-    const settleGeneration = bumpWorktreeGenerationBeforePathMutation(targetPath)
+    const settleGeneration = await beginNotifiedWorktreePathMutation(targetPath, 'remove')
     try {
       // Why: a non-local runtime has no client Trash; this delete is permanent, so the renderer confirms before calling.
       await rm(targetPath, { recursive: recursive === true, force: true })

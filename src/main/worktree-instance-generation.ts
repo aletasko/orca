@@ -1,9 +1,12 @@
-import { randomUUID } from 'node:crypto'
+import type { WorktreeChangeOp } from '../shared/worktree/change-notification'
+import {
+  announceWorktreeChanged,
+  announceWorktreeWillChange,
+  type WorktreeWillChangeAnnouncement
+} from './worktree-change-notifier'
+import { WORKTREE_RUNTIME_EPOCH } from './worktree-runtime-epoch'
 
-// Why per process: the generation counters below live in memory, so a value is only meaningful
-// together with this epoch. A restart mints a new epoch, which means an old (epoch, generation)
-// pair can never be re-issued with a different meaning; callers must compare the pair, not the number.
-export const WORKTREE_RUNTIME_EPOCH = randomUUID()
+export { WORKTREE_RUNTIME_EPOCH }
 
 /**
  * `at`: the checkout whose root IS `path` (git-layer move/remove).
@@ -54,11 +57,18 @@ function adjustInFlight(instanceIds: readonly string[] | null, delta: 1 | -1): v
   }
 }
 
+type BegunMutation = {
+  settle: () => void
+  /** Resolves when the pre-change acknowledgement wait ended; never rejects. Already resolved without a notified op. */
+  acknowledged: Promise<void>
+}
+
 function beginMutation(
   path: string,
   scope: WorktreeMutationScope,
-  unattributedWhenNoInstance: boolean
-): () => void {
+  unattributedWhenNoInstance: boolean,
+  notifyOp?: WorktreeChangeOp
+): BegunMutation {
   let instanceIds: readonly string[] | null = null
   try {
     instanceIds = resolveInstanceIdsAtPath?.(path, scope) ?? null
@@ -70,8 +80,25 @@ function beginMutation(
   }
   bumpInstances(instanceIds)
   adjustInFlight(instanceIds, 1)
+  // Why after the bump: the in-flight mark already refuses attestation while subscribers revoke, so a
+  // subscriber cannot re-pin the root during the acknowledgement wait.
+  // null (unattributed) is announced as one event with no instance id: "everything may be affected".
+  const targets: readonly (string | null)[] | null = notifyOp ? (instanceIds ?? [null]) : null
+  let willChange: WorktreeWillChangeAnnouncement | null = null
+  if (notifyOp && targets) {
+    try {
+      willChange = announceWorktreeWillChange(targets, path, notifyOp)
+    } catch (error) {
+      // Why swallowed: Orca's own move/remove must never fail or hang because of a subscriber.
+      console.warn('[worktree-change] will-change announcement failed; proceeding', error)
+    }
+  }
+  const acknowledged = (willChange?.settled ?? Promise.resolve()).then(
+    () => undefined,
+    () => undefined
+  )
   let settled = false
-  return () => {
+  const settle = (): void => {
     if (settled) {
       return
     }
@@ -79,7 +106,15 @@ function beginMutation(
     // Why re-bump the ids resolved up front: the metadata row may already sit under a new locator.
     bumpInstances(instanceIds)
     adjustInFlight(instanceIds, -1)
+    if (notifyOp && targets) {
+      try {
+        announceWorktreeChanged(targets, path, notifyOp, willChange)
+      } catch (error) {
+        console.warn('[worktree-change] changed announcement failed', error)
+      }
+    }
   }
+  return { settle, acknowledged }
 }
 
 /**
@@ -94,7 +129,7 @@ function beginMutation(
  * unattributed: it bumps and blocks every instance.
  */
 export function bumpWorktreeGenerationBeforeMutation(path: string): () => void {
-  return beginMutation(path, 'at', true)
+  return beginMutation(path, 'at', true).settle
 }
 
 /**
@@ -121,7 +156,33 @@ export function bumpWorktreeGenerationBeforeMutation(path: string): () => void {
  *   There is no timeout. Deny-safe, but it can block attestation indefinitely.
  */
 export function bumpWorktreeGenerationBeforePathMutation(path: string): () => void {
-  return beginMutation(path, 'at-or-under', false)
+  return beginMutation(path, 'at-or-under', false).settle
+}
+
+/**
+ * `bumpWorktreeGenerationBeforeMutation` plus the pre-change notification: publishes `will-change`
+ * synchronously (same before-the-first-await guarantee as the bump), then waits for the current
+ * subscribers' acknowledgements, bounded by the notifier's timeout, and only then resolves with
+ * `settle`. `settle` bumps, clears the in-flight mark and publishes `changed`. The caller changes the
+ * filesystem only after this resolves; it never rejects and never waits when nobody subscribes.
+ */
+export async function beginNotifiedWorktreeMutation(
+  path: string,
+  op: WorktreeChangeOp
+): Promise<() => void> {
+  const begun = beginMutation(path, 'at', true, op)
+  await begun.acknowledged
+  return begun.settle
+}
+
+/** Same for generic file rename/delete: a target that is, or contains, no checkout root announces nothing. */
+export async function beginNotifiedWorktreePathMutation(
+  path: string,
+  op: WorktreeChangeOp
+): Promise<() => void> {
+  const begun = beginMutation(path, 'at-or-under', false, op)
+  await begun.acknowledged
+  return begun.settle
 }
 
 /** Monotonic within one `WORKTREE_RUNTIME_EPOCH`; follows the instance across a move. */

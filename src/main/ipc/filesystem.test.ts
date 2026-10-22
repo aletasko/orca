@@ -4,6 +4,11 @@ import {
   isWorktreeMutationInFlight,
   setWorktreeInstanceResolver
 } from '../worktree-instance-generation'
+import {
+  acknowledgeWorktreeWillChange,
+  resetWorktreeChangeNotifierForTests,
+  watchWorktreeChanges
+} from '../worktree-change-notifier'
 import path from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -488,6 +493,38 @@ describe('registerFilesystemHandlers', () => {
     expect(seen).toEqual([{ generation: start + 1, inFlight: true }])
     expect(getWorktreeInstanceGeneration('inst-trash')).toBe(start + 2)
     expect(isWorktreeMutationInFlight('inst-trash')).toBe(false)
+  })
+
+  it('publishes will-change and waits for the acknowledgement before trashing a registered worktree root', async () => {
+    registerFilesystemHandlers(store as never)
+    resetWorktreeChangeNotifierForTests()
+    setWorktreeInstanceResolver((resolvedPath) =>
+      resolvedPath === REPO_PATH ? ['inst-trash-ack'] : []
+    )
+    const subscriberId = 'trash-subscriber-0123456789'
+    try {
+      const registered = await watchWorktreeChanges({ subscriberId, timeoutMs: 0 })
+      const deletion = handlers.get('fs:deletePath')!(null, { targetPath: REPO_PATH })
+      const polled = await watchWorktreeChanges({
+        subscriberId,
+        afterSeq: registered.status === 'ok' ? registered.lastSeq : 0,
+        timeoutMs: 5000
+      })
+      expect(polled.status === 'ok' && polled.events).toMatchObject([
+        { event: 'will-change', instanceId: 'inst-trash-ack', path: REPO_PATH, op: 'remove' }
+      ])
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      // The trash call is the filesystem change: it has not happened while the ack is outstanding.
+      expect(trashItemMock).not.toHaveBeenCalled()
+      acknowledgeWorktreeWillChange(subscriberId, [
+        polled.status === 'ok' ? polled.events[0]!.seq : 0
+      ])
+      await deletion
+      expect(trashItemMock).toHaveBeenCalledWith(REPO_PATH)
+    } finally {
+      setWorktreeInstanceResolver(null)
+      resetWorktreeChangeNotifierForTests()
+    }
   })
 
   // Regression for #6415: WSL UNC paths have no Recycle Bin, so shell.trashItem

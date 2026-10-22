@@ -3,7 +3,7 @@ import type { RemoveWorktreeResult } from '../../shared/worktree/create-types'
 import { assertWorktreeUnlockedForRemoval } from '../../shared/worktree/removal'
 import { windowsLongPathGitArgs } from '../../shared/windows-long-path-git-args'
 import { removeHostTree } from '../host-tree-removal'
-import { bumpWorktreeGenerationBeforeMutation } from '../worktree-instance-generation'
+import { beginNotifiedWorktreeMutation } from '../worktree-instance-generation'
 import { withSpan } from '../observability/tracer'
 import { parseWslPath } from '../wsl'
 import { gitExecFileAsync } from './runner'
@@ -31,8 +31,9 @@ export async function removeWorktree(
   // forceBranchDelete: for failed-creation rollback (fresh branch, no user work); user deletes leave it false so unmerged commits survive.
   options: RemoveWorktreeOptions = {}
 ): Promise<RemoveWorktreeResult> {
-  // Why before any await: the generation must already be ahead when Git starts deleting the checkout.
-  const settleGeneration = bumpWorktreeGenerationBeforeMutation(worktreePath)
+  // Why before any await: the generation must already be ahead when Git starts deleting the checkout,
+  // and `will-change` goes out (and is acknowledged or times out) before Git touches the root.
+  const settleGeneration = await beginNotifiedWorktreeMutation(worktreePath, 'remove')
   try {
     // Removal deletes branches, and a ref deletion needs the packed-refs lock a
     // running idle pack holds while it rewrites. Waits that window out; the
@@ -127,7 +128,7 @@ export async function finishUnregisteredWorktreeRemoval(
   assertLeftover: () => Promise<void>,
   options: RemoveWorktreeOptions = {}
 ): Promise<RemoveWorktreeResult> {
-  const settleGeneration = bumpWorktreeGenerationBeforeMutation(worktreePath)
+  const settleGeneration = await beginNotifiedWorktreeMutation(worktreePath, 'remove')
   try {
     await runUnderWorktreeDeleteLimit(async () => {
       // Why in the slot: the wait can outlast two large deletes, and the path may change meanwhile.

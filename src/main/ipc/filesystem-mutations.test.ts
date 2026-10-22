@@ -29,6 +29,11 @@ vi.mock('fs/promises', () => ({
 
 import { registerFilesystemMutationHandlers } from './filesystem-mutations'
 import {
+  acknowledgeWorktreeWillChange,
+  resetWorktreeChangeNotifierForTests,
+  watchWorktreeChanges
+} from '../worktree-change-notifier'
+import {
   getWorktreeInstanceGeneration,
   isWorktreeMutationInFlight,
   setWorktreeInstanceResolver
@@ -196,6 +201,37 @@ describe('registerFilesystemMutationHandlers', () => {
     expect(inFlightAtRename).toBe(true)
     expect(getWorktreeInstanceGeneration('inst-ren')).toBe(start + 2)
     expect(isWorktreeMutationInFlight('inst-ren')).toBe(false)
+  })
+
+  it('publishes will-change and waits for the acknowledgement before renaming a registered worktree root', async () => {
+    const oldPath = path.resolve('/workspace/repo/ack-root')
+    const newPath = path.resolve('/workspace/repo/ack-root-new')
+    resetWorktreeChangeNotifierForTests()
+    setWorktreeInstanceResolver((resolvedPath) => (resolvedPath === oldPath ? ['inst-ack'] : []))
+    const subscriberId = 'rename-subscriber-0123456789'
+    try {
+      const registered = await watchWorktreeChanges({ subscriberId, timeoutMs: 0 })
+      renameMock.mockClear()
+      const renaming = handlers.get('fs:rename')!(null, { oldPath, newPath })
+      const polled = await watchWorktreeChanges({
+        subscriberId,
+        afterSeq: registered.status === 'ok' ? registered.lastSeq : 0,
+        timeoutMs: 5000
+      })
+      expect(polled.status === 'ok' && polled.events).toMatchObject([
+        { event: 'will-change', instanceId: 'inst-ack', path: oldPath, op: 'move' }
+      ])
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(renameMock).not.toHaveBeenCalled()
+      acknowledgeWorktreeWillChange(subscriberId, [
+        polled.status === 'ok' ? polled.events[0]!.seq : 0
+      ])
+      await renaming
+      expect(renameMock).toHaveBeenCalledWith(oldPath, newPath)
+    } finally {
+      setWorktreeInstanceResolver(null)
+      resetWorktreeChangeNotifierForTests()
+    }
   })
 
   it('serializes concurrent local renames targeting the same destination', async () => {
