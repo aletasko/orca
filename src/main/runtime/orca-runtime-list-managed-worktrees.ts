@@ -15,6 +15,16 @@ import type {
   WorkspacePortProbe,
   WorkspacePortScanResult
 } from '../../shared/workspace-ports'
+import { lstat } from 'node:fs/promises'
+import type { RuntimeWorktreeInstanceAttestation } from '../../shared/runtime-worktree-contracts'
+import { getLocalProjectWorktreeGitOptions } from '../project-runtime-git-options'
+import { pendingWorktreeRemovals } from '../worktree-removal-table'
+import {
+  WORKTREE_RUNTIME_EPOCH,
+  getWorktreeInstanceGeneration
+} from '../worktree-instance-generation'
+import { scanLocalRepoWorktreesForResolution } from './repo-worktree-resolution-scan'
+import { attestWorktreeInstance } from './worktree-instance-attestation'
 import {
   filterWorkspacePortProbes,
   killWorkspacePort,
@@ -37,6 +47,40 @@ export class OrcaRuntimeWithListManagedWorktrees extends OrcaRuntimeWithRestoreS
       }
     }
     return this.managedWorktreeQueries.list(repoSelector, limit, sourceDefaultsSupported)
+  }
+
+  /**
+   * Authoritative single-instance lookup for a caller that must not trust the cached listing.
+   * Uses its own Git scan and `lstat`; none of the resolved-snapshot or per-repo scan caches are read.
+   */
+  attestWorktreeInstance(instanceId: string): Promise<RuntimeWorktreeInstanceAttestation> {
+    const store = this.requireStore()
+    return attestWorktreeInstance(instanceId, {
+      store,
+      scanLocalRepo: (repo) =>
+        scanLocalRepoWorktreesForResolution(
+          repo.path,
+          getLocalProjectWorktreeGitOptions(store, repo)
+        ),
+      lstatRoot: async (path) => {
+        const stats = await lstat(path, { bigint: true })
+        return {
+          dev: stats.dev,
+          ino: stats.ino,
+          isDirectory: stats.isDirectory(),
+          isSymbolicLink: stats.isSymbolicLink()
+        }
+      },
+      runtimeEpoch: WORKTREE_RUNTIME_EPOCH,
+      getGeneration: getWorktreeInstanceGeneration,
+      isRemovalPending: (worktreeId) => pendingWorktreeRemovals.has(worktreeId),
+      platform: process.platform,
+      assertPlainLocalGit: (repo) => {
+        if (getLocalProjectWorktreeGitOptions(store, repo).wslDistro) {
+          throw new Error('wsl_routed')
+        }
+      }
+    })
   }
 
   listRetiredWorktreeNames(repoSelector: string) {

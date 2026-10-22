@@ -2,6 +2,7 @@ import { runProcess } from '../shared/child-process/run-process'
 import { lstat, readFile } from 'node:fs/promises'
 import { buildWslExecArgs, quotePosixShell } from '../shared/wsl-login-shell-command'
 import { removeHostTree } from './host-tree-removal'
+import { bumpWorktreeGenerationBeforeMutation } from './worktree-instance-generation'
 import { toLinuxPath } from './wsl'
 import { resolveWslInteropSpawnCwd } from './wsl-interop-spawn-directory'
 import type { ReadPath, StatPath } from './worktree-orphan-gitdir-proof'
@@ -123,13 +124,18 @@ export async function removeLocalWorktreePath(
   targetPath: string,
   options: LocalWorktreeFilesystemOptions = {}
 ): Promise<void> {
-  const distro = options.wslDistro?.trim()
-  if (!shouldUseWslFilesystem(options) || !distro) {
-    await removeHostTree(targetPath)
-    return
-  }
+  const settleGeneration = bumpWorktreeGenerationBeforeMutation(targetPath)
+  try {
+    const distro = options.wslDistro?.trim()
+    if (!shouldUseWslFilesystem(options) || !distro) {
+      await removeHostTree(targetPath)
+      return
+    }
 
-  // Why: WSL-owned worktree directories may be POSIX paths that Node on
-  // Windows cannot delete safely. Run the deletion inside the selected distro.
-  await runWslCommand(distro, `rm -rf -- ${quotePosixShell(toLinuxPath(targetPath))}`)
+    // Why: WSL-owned worktree directories may be POSIX paths that Node on
+    // Windows cannot delete safely. Run the deletion inside the selected distro.
+    await runWslCommand(distro, `rm -rf -- ${quotePosixShell(toLinuxPath(targetPath))}`)
+  } finally {
+    settleGeneration()
+  }
 }

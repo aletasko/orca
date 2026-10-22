@@ -1,4 +1,5 @@
 export {
+  WorktreeAttestInstanceParams,
   AutomationWorkspaceProvenanceRequest,
   CliWorkspaceProvenanceRequest,
   OptionalTuiAgent,

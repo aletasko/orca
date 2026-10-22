@@ -56,6 +56,15 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
     allowedFlags: [...GLOBAL_FLAGS, 'worktree']
   },
   {
+    path: ['worktree', 'attest'],
+    summary: 'Attest one worktree instance without trusting any cache',
+    usage: 'orca worktree attest --instance <instanceId> [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'instance'],
+    notes: [
+      'Reads Git and the filesystem fresh and prints path, dev/ino, runtime epoch and generation only when the host attests the instance. A host without this method, a remote host, a duplicate id, or a symlinked root is reported as not authoritative.'
+    ]
+  },
+  {
     path: ['worktree', 'current'],
     summary: 'Show the Orca-managed worktree for the current directory',
     usage: 'orca worktree current [--json]',

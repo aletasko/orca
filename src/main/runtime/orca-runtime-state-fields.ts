@@ -1,4 +1,6 @@
 // @ts-nocheck -- mechanically split from OrcaRuntimeService; behavior is covered by AST equivalence and characterization tests.
+import { setWorktreeInstanceResolver } from '../worktree-instance-generation'
+import { listInstanceIdsAtPath } from './worktree-instance-attestation'
 import { OrcaRuntimeWithLinearCommands } from './orca-runtime-linear-commands'
 import type { RuntimeStore } from './runtime-store-contract'
 import type { StatsCollector } from '../stats/collector'
@@ -120,6 +122,8 @@ export class OrcaRuntimeWithStateFields extends OrcaRuntimeWithLinearCommands {
   ) {
     super()
     this.store = store
+    // Why here: git-layer move/remove has no store, but must bump the generation of the instance it is about to move or delete.
+    setWorktreeInstanceResolver((path) => (store ? listInstanceIdsAtPath(store, path) : null))
     this.machineName.start()
     this.prepareClaudeAuth = deps?.prepareClaudeAuth
     const runtime = this as RuntimeCommandSurfaceHost<this>

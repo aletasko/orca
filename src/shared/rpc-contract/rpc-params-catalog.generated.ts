@@ -531,6 +531,7 @@ import { WorkspacePortKillParams, WorkspacePortScanParams } from './workspace-po
 import { WorktreeCreate, WorktreePrefetchCreateBase } from './worktree-create-params'
 import {
   WorktreeActivate,
+  WorktreeAttestInstanceParams,
   WorktreeDetectedListParams,
   WorktreeForceDeleteBranch,
   WorktreeListParams,
@@ -1184,6 +1185,7 @@ export const RPC_PARAMS_BY_METHOD = {
   'workspacePorts.kill': WorkspacePortKillParams,
   'workspacePorts.scan': WorkspacePortScanParams,
   'worktree.activate': WorktreeActivate,
+  'worktree.attestInstance': WorktreeAttestInstanceParams,
   'worktree.create': WorktreeCreate,
   'worktree.detectedList': WorktreeDetectedListParams,
   'worktree.forceDeleteBranch': WorktreeForceDeleteBranch,

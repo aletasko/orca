@@ -7,6 +7,7 @@ import {
 } from '../worktree-removal-marker-projection'
 import { snapshotPendingWorktreeRemovals } from '../../../worktree-removal-listing'
 import {
+  WorktreeAttestInstanceParams,
   WorktreeDetectedListParams,
   WorktreeListParams,
   WorktreePsParams
@@ -54,6 +55,13 @@ export const WORKTREE_CATALOG_METHODS = [
       // caller demanding a fresh read fails closed instead of trusting a cached list.
       return params.fresh === true ? { ...result, freshCacheBypass: true } : result
     }
+  }),
+  defineMethod({
+    name: 'worktree.attestInstance',
+    params: WorktreeAttestInstanceParams,
+    // Why no projection or cache: the answer is a security input for a caller that does not trust
+    // the listing. See `attestWorktreeInstance` for the refusals.
+    handler: async (params, { runtime }) => runtime.attestWorktreeInstance(params.instanceId)
   }),
   defineMethod({
     name: 'worktree.listRetiredNames',

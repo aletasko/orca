@@ -58,6 +58,11 @@ export const WorktreeListParams = z.object({
   fresh: OptionalBoolean
 })
 
+// Why a strict required string: an attestation for "no id" must be a parse error, never a lookup of ''.
+export const WorktreeAttestInstanceParams = z.object({
+  instanceId: z.string().min(1).max(128)
+})
+
 export const WorktreeDetectedListParams = z.object({
   repo: z
     .unknown()

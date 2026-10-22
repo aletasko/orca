@@ -170,3 +170,30 @@ export type RuntimeWorktreeListResult = {
   /** Set only when the host honored a `fresh` list request by bypassing its caches. Not an `authoritative` proof. */
   freshCacheBypass?: true
 }
+
+/**
+ * Host-side verdict of `worktree.attestInstance`. Only `status: 'ok'` carries `authoritative: true`;
+ * every other status is a refusal. Callers must go through `interpretWorktreeInstanceAttestation`
+ * so a host that lacks the method, or answers malformed, never reads as authoritative.
+ */
+export type RuntimeWorktreeInstanceAttestation =
+  | {
+      status: 'ok'
+      authoritative: true
+      instanceId: string
+      executionHostId: string
+      path: string
+      /** Decimal strings: 64-bit st_dev/st_ino do not survive a JSON number. */
+      dev: string
+      ino: string
+      /** New on every runtime process start. `generation` is only comparable under the same epoch. */
+      runtimeEpoch: string
+      /** Per instance; raised before any move/remove/root change done through Orca. */
+      generation: number
+    }
+  | {
+      status: 'absent' | 'ambiguous' | 'remote' | 'unsupported'
+      authoritative: false
+      /** Diagnostic only; never branch on it. */
+      reason?: string
+    }
